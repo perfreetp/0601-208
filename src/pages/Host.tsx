@@ -16,6 +16,11 @@ import {
   CheckCircle2,
   Circle,
   MessageSquare,
+  GripVertical,
+  Edit3,
+  Check,
+  X,
+  Plus,
 } from 'lucide-react';
 import { useGameStore } from '@/store/gameStore';
 import { usePlayerStore } from '@/store/playerStore';
@@ -49,12 +54,17 @@ export default function Host() {
     tasks,
     completedTasks,
     sendHint,
+    teams,
+    renameTeam,
+    setTeamCaptain,
+    addTeam,
   } = useGameStore();
   const { players, currentPlayer, updatePlayer } = usePlayerStore();
   const [countdown, setCountdown] = useState(10);
-  const [selectedTeam, setSelectedTeam] = useState<string>('all');
   const [hintContent, setHintContent] = useState('');
   const [hintSent, setHintSent] = useState(false);
+  const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
+  const [editingTeamName, setEditingTeamName] = useState('');
 
   if (!currentPlayer.isHost) {
     return (
@@ -68,18 +78,13 @@ export default function Host() {
     );
   }
 
-  const teams = Array.from(new Set(players.map(p => p.teamId))) as string[];
-  const filteredPlayers = selectedTeam === 'all'
-    ? players
-    : players.filter(p => p.teamId === selectedTeam);
-
   const completedCount = tasks.filter(t => t.status === 'completed').length;
   const inProgressCount = tasks.filter(t => t.status === 'inProgress').length;
   const averageScore = players.length > 0
     ? Math.round(players.reduce((sum, p) => sum + p.score, 0) / players.length)
     : 0;
 
-  const handleSetCaptain = (playerId: string) => {
+  const handleSetHost = (playerId: string) => {
     players.forEach(p => {
       updatePlayer(p.id, { isHost: p.id === playerId ? true : false });
     });
@@ -87,6 +92,33 @@ export default function Host() {
 
   const handleChangeTeam = (playerId: string, teamId: string) => {
     updatePlayer(playerId, { teamId });
+  };
+
+  const handleStartEditTeam = (teamId: string, name: string) => {
+    setEditingTeamId(teamId);
+    setEditingTeamName(name);
+  };
+
+  const handleSaveTeamName = () => {
+    if (editingTeamId && editingTeamName.trim()) {
+      renameTeam(editingTeamId, editingTeamName.trim());
+    }
+    setEditingTeamId(null);
+    setEditingTeamName('');
+  };
+
+  const handleCancelEditTeam = () => {
+    setEditingTeamId(null);
+    setEditingTeamName('');
+  };
+
+  const handleAddTeam = () => {
+    const newIndex = teams.length + 1;
+    const colors = ['#3B82F6', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#EC4899'];
+    addTeam({
+      name: `队伍${newIndex}`,
+      color: colors[(newIndex - 1) % colors.length],
+    });
   };
 
   const handleExportResults = () => {
@@ -99,6 +131,14 @@ export default function Host() {
         name: p.name,
         score: p.score,
         team: p.teamId,
+        teamName: teams.find(t => t.id === p.teamId)?.name,
+        teamCaptain: p.isTeamCaptain,
+      })),
+      teams: teams.map(t => ({
+        name: t.name,
+        captain: players.find(p => p.id === t.captainId)?.name,
+        totalScore: players.filter(p => p.teamId === t.id).reduce((s, p) => s + p.score, 0),
+        players: players.filter(p => p.teamId === t.id).map(p => ({ name: p.name, score: p.score })),
       })),
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -252,82 +292,185 @@ export default function Host() {
 
         <div className="col-span-5 flex flex-col gap-6 min-h-0">
           <div className="rounded-2xl bg-glass border border-white/10 backdrop-blur-md p-5 flex-1 min-h-0 overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2 text-white/80">
-                <Users className="w-5 h-5" />
-                <h2 className="font-semibold">玩家管理</h2>
-                <span className="text-sm text-white/50">({players.length}人)</span>
-              </div>
-              <select
-                value={selectedTeam}
-                onChange={(e) => setSelectedTeam(e.target.value)}
-                className="px-3 py-1.5 rounded-lg bg-ocean-dark border border-white/10 text-white text-sm focus:outline-none focus:border-neon-cyan/50"
-              >
-                <option value="all">全部队伍</option>
-                {teams.map((team, idx) => (
-                  <option key={team} value={team}>队伍 {idx + 1}</option>
-                ))}
-              </select>
+            <div className="flex items-center gap-2 text-white/80 mb-4">
+              <Users className="w-5 h-5" />
+              <h2 className="font-semibold">团队管理</h2>
+              <span className="text-sm text-white/50">({teams.length}队 / {players.length}人)</span>
             </div>
-            <div className="flex-1 overflow-y-auto space-y-2 pr-2">
-              {filteredPlayers.map((player) => {
-                const teamIndex = teams.indexOf(player.teamId);
-                return (
-                  <div
-                    key={player.id}
-                    className="p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all"
-                  >
-                    <div className="flex items-center gap-3">
+            <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+              <div className="grid grid-cols-2 gap-4">
+                {teams.map((team) => {
+                  const teamPlayers = players.filter(p => p.teamId === team.id);
+                  const captain = players.find(p => p.id === team.captainId);
+                  return (
+                    <div
+                      key={team.id}
+                      className="rounded-xl border-2 overflow-hidden transition-all hover:shadow-lg"
+                      style={{ borderColor: `${team.color}60`, backgroundColor: `${team.color}08` }}
+                    >
                       <div
-                        className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl border-2"
-                        style={{ borderColor: player.color, backgroundColor: `${player.color}20` }}
+                        className="p-3 flex items-center justify-between"
+                        style={{ backgroundColor: `${team.color}15` }}
                       >
-                        {player.avatarEmoji}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-white truncate">{player.name}</span>
-                          {player.isHost && (
-                            <Crown className="w-4 h-4 text-gold-yellow flex-shrink-0" />
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          {editingTeamId === team.id ? (
+                            <input
+                              value={editingTeamName}
+                              onChange={(e) => setEditingTeamName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveTeamName();
+                                if (e.key === 'Escape') handleCancelEditTeam();
+                              }}
+                              autoFocus
+                              className="flex-1 px-2 py-1 rounded-lg bg-ocean-dark border border-white/20 text-white text-sm font-semibold focus:outline-none focus:border-neon-cyan/50"
+                            />
+                          ) : (
+                            <span className="font-semibold text-white truncate">{team.name}</span>
                           )}
                         </div>
-                        <div className="flex items-center gap-3 mt-1">
-                          <span className="text-xs text-white/50">
-                            {getAreaName(player.currentArea)}
-                          </span>
-                          <span className="text-xs text-gold-yellow flex items-center gap-1">
-                            <Star className="w-3 h-3" />
-                            {player.score}
-                          </span>
+                        <div className="flex items-center gap-1">
+                          {editingTeamId === team.id ? (
+                            <>
+                              <button
+                                onClick={handleSaveTeamName}
+                                className="p-1.5 rounded-lg bg-aurora-green/20 text-aurora-green hover:bg-aurora-green/30 transition-all"
+                                title="保存"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={handleCancelEditTeam}
+                                className="p-1.5 rounded-lg bg-white/10 text-white/60 hover:bg-white/20 transition-all"
+                                title="取消"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => handleStartEditTeam(team.id, team.name)}
+                              className="p-1.5 rounded-lg bg-white/10 text-white/60 hover:bg-white/20 transition-all"
+                              title="编辑队名"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={player.teamId}
-                          onChange={(e) => handleChangeTeam(player.id, e.target.value)}
-                          className="px-2 py-1 rounded-lg bg-ocean-dark border border-white/10 text-white text-xs focus:outline-none"
-                        >
-                          {teams.map((team, idx) => (
-                            <option key={team} value={team}>队{idx + 1}</option>
-                          ))}
-                        </select>
-                        {!player.isHost && (
-                          <button
-                            onClick={() => handleSetCaptain(player.id)}
-                            className="px-2 py-1 rounded-lg bg-gold-yellow/20 border border-gold-yellow/30 text-gold-yellow text-xs hover:bg-gold-yellow/30 transition-all"
-                            title="设为主持人"
+                      <div className="px-3 py-2 border-b border-white/10 flex items-center gap-2">
+                        <Crown className="w-4 h-4 text-gold-yellow flex-shrink-0" />
+                        <span className="text-sm text-white/70">
+                          队长：<span className="text-white font-medium">{captain?.name || '未设置'}</span>
+                        </span>
+                      </div>
+                      <div className="p-2 space-y-1.5">
+                        {teamPlayers.map((player) => (
+                          <div
+                            key={player.id}
+                            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-all"
                           >
-                            <Crown className="w-3 h-3" />
-                          </button>
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="w-8 h-8 rounded-lg flex items-center justify-center text-lg border flex-shrink-0"
+                                style={{ borderColor: player.color, backgroundColor: `${player.color}20` }}
+                              >
+                                {player.avatarEmoji}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-sm text-white truncate">{player.name}</span>
+                                  {player.isTeamCaptain && (
+                                    <Crown className="w-3 h-3 text-gold-yellow flex-shrink-0" />
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-xs text-white/50">{getAreaName(player.currentArea)}</span>
+                                  <span className="text-xs text-gold-yellow flex items-center gap-0.5">
+                                    <Star className="w-2.5 h-2.5" />
+                                    {player.score}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <select
+                                  value={player.teamId}
+                                  onChange={(e) => handleChangeTeam(player.id, e.target.value)}
+                                  className="px-1.5 py-1 rounded-md bg-ocean-dark border border-white/10 text-white text-xs focus:outline-none focus:border-neon-cyan/50"
+                                >
+                                  {teams.map(t => (
+                                    <option key={t.id} value={t.id}>{t.name}</option>
+                                  ))}
+                                </select>
+                                {!player.isTeamCaptain && (
+                                  <button
+                                    onClick={() => setTeamCaptain(team.id, player.id)}
+                                    className="px-1.5 py-1 rounded-md bg-gold-yellow/20 border border-gold-yellow/30 text-gold-yellow text-xs hover:bg-gold-yellow/30 transition-all"
+                                    title="设为队长"
+                                  >
+                                    <Crown className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        {teamPlayers.length === 0 && (
+                          <div className="text-center text-xs text-white/40 py-3">暂无玩家</div>
                         )}
                       </div>
                     </div>
-                    {teamIndex >= 0 && (
-                      <div className="mt-2 h-1 rounded-full bg-white/10" style={{ backgroundColor: `${player.color}40` }} />
-                    )}
+                  );
+                })}
+              </div>
+              <button
+                onClick={handleAddTeam}
+                className="w-full py-3 rounded-xl border-2 border-dashed border-white/20 text-white/60 flex items-center justify-center gap-2 hover:bg-white/5 hover:border-white/30 transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                新增队伍
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-glass border border-white/10 backdrop-blur-md p-5">
+            <div className="flex items-center gap-2 text-white/80 mb-4">
+              <Crown className="w-5 h-5 text-gold-yellow" />
+              <h2 className="font-semibold">主持人管理</h2>
+            </div>
+            <div className="space-y-2">
+              {players.map((player) => (
+                <div
+                  key={player.id}
+                  className="flex items-center justify-between p-2.5 rounded-xl bg-white/5 hover:bg-white/10 transition-all"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className="w-9 h-9 rounded-lg flex items-center justify-center text-xl border"
+                      style={{ borderColor: player.color, backgroundColor: `${player.color}20` }}
+                    >
+                      {player.avatarEmoji}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm text-white">{player.name}</span>
+                      {player.isHost && (
+                        <Crown className="w-3.5 h-3.5 text-gold-yellow" />
+                      )}
+                    </div>
                   </div>
-                );
-              })}
+                  {!player.isHost ? (
+                    <button
+                      onClick={() => handleSetHost(player.id)}
+                      className="px-3 py-1.5 rounded-lg bg-gold-yellow/20 border border-gold-yellow/30 text-gold-yellow text-xs hover:bg-gold-yellow/30 transition-all"
+                    >
+                      设为主持人
+                    </button>
+                  ) : (
+                    <span className="px-3 py-1.5 rounded-lg bg-gold-yellow/10 text-gold-yellow text-xs">
+                      当前主持人
+                    </span>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         </div>

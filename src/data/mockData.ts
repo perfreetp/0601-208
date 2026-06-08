@@ -12,6 +12,7 @@ import type {
   Material,
   AreaInfo,
   GameArea,
+  Team,
 } from '@/types';
 
 export const AREAS: AreaInfo[] = [
@@ -101,6 +102,11 @@ export const AVATAR_COLORS = [
   '#FFA500',
 ];
 
+export const MOCK_TEAMS: Team[] = [
+  { id: 'team1', name: '星辰队', color: '#3B82F6', captainId: 'p1' },
+  { id: 'team2', name: '浪潮队', color: '#F59E0B', captainId: 'p4' },
+];
+
 export const MOCK_PLAYERS: Player[] = [
   {
     id: 'p1',
@@ -116,6 +122,7 @@ export const MOCK_PLAYERS: Player[] = [
     isHandRaised: false,
     isSpeaking: false,
     score: 250,
+    isTeamCaptain: true,
   },
   {
     id: 'p2',
@@ -161,6 +168,7 @@ export const MOCK_PLAYERS: Player[] = [
     isHandRaised: false,
     isSpeaking: false,
     score: 210,
+    isTeamCaptain: true,
   },
   {
     id: 'p5',

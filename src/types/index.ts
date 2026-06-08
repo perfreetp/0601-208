@@ -32,6 +32,13 @@ export type EventLogType =
   | 'gamePause'      // 游戏暂停
   | 'gameResume';    // 游戏继续
 
+export interface Team {
+  id: string;
+  name: string;
+  color: string;
+  captainId?: string;
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -46,6 +53,7 @@ export interface Player {
   isHandRaised: boolean;
   isSpeaking: boolean;
   score: number;
+  isTeamCaptain?: boolean;
   currentEmote?: EmoteType;
 }
 
@@ -220,7 +228,8 @@ export interface GameState {
   hiddenItems: HiddenItem[];
   puzzlePieces: PuzzlePiece[];
   emotes: { playerId: string; emote: EmoteType; timestamp: Date }[];
-  eventLogs: EventLog[];     // 事件日志
+  eventLogs: EventLog[];
+  teams: Team[];
 }
 
 export interface AreaInfo {

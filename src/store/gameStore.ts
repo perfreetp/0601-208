@@ -17,6 +17,7 @@ import type {
   VoteOption,
   EventLog,
   EventLogType,
+  Team,
 } from '@/types';
 import {
   MOCK_TASKS,
@@ -29,7 +30,9 @@ import {
   MOCK_PUZZLE_PIECES,
   MOCK_MATERIALS,
   MOCK_PLAYERS,
+  MOCK_TEAMS,
 } from '@/data/mockData';
+import { usePlayerStore } from './playerStore';
 
 const STORAGE_KEY = 'metaverse-island-state-v1';
 
@@ -82,6 +85,9 @@ interface GameStore extends GameState {
   setPlayerArea: (playerId: string, area: GameArea) => void;
   resetGame: () => void;
   resetGameState: () => void;
+  renameTeam: (teamId: string, newName: string) => void;
+  setTeamCaptain: (teamId: string, playerId: string) => void;
+  addTeam: (team: Omit<Team, 'id'>) => Team;
 }
 
 const originalInitialState: GameState = {
@@ -128,6 +134,7 @@ const originalInitialState: GameState = {
   puzzlePieces: [...MOCK_PUZZLE_PIECES],
   emotes: [],
   eventLogs: [],
+  teams: [...MOCK_TEAMS],
 };
 
 const savedState = loadState();
@@ -145,12 +152,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
   togglePause: () => {
     const state = get();
     const newPaused = !state.isPaused;
+    const currentScore = state.teamScore;
     set({ isPaused: newPaused });
     get().addEventLog({
       type: newPaused ? 'gamePause' : 'gameResume',
       description: newPaused ? '游戏已暂停' : '游戏已继续',
       playerId: 'p1',
+      playerIds: ['p1'],
       area: 'host',
+      scoreDelta: 0,
+      teamScoreAfter: currentScore,
     });
   },
 
@@ -200,6 +211,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     get().addEventLog({
       type: 'taskComplete',
       description: `团队成功完成「${task.title}」挑战！`,
+      playerId: 'p1',
       playerIds: MOCK_PLAYERS.map(p => p.id),
       area: 'tasks',
       taskId,
@@ -225,10 +237,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const building = state.buildings.find(b => b.id === buildingId);
     if (!building) return;
 
+    const currentScore = state.teamScore;
+    const points = 20;
+    const player = MOCK_PLAYERS.find(p => p.id === 'p1');
+
     set((s) => ({
       buildings: s.buildings.map((b) =>
         b.id === buildingId ? { ...b, placed: true, position: { x, y }, placedBy: 'p1', placedAt: new Date(), confirmed: false } : b
       ),
+      teamScore: s.teamScore + points,
       achievements: s.achievements.map((a) => {
         if (a.id === 'a5') {
           const newProgress = (a.progress || 0) + 1;
@@ -240,10 +257,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     get().addEventLog({
       type: 'buildingPlaced',
-      description: `放置了建筑「${building.name}」`,
+      description: `${player?.name || '玩家'} 放置了建筑 ${building.name}`,
       playerId: 'p1',
+      playerIds: ['p1'],
       area: 'build',
       buildingId,
+      scoreDelta: points,
+      teamScoreAfter: currentScore + points,
     });
   },
 
@@ -251,6 +271,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const state = get();
     const building = state.buildings.find(b => b.id === buildingId);
     if (!building) return;
+
+    const currentScore = state.teamScore;
 
     set((s) => ({
       buildings: s.buildings.map((b) =>
@@ -260,10 +282,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     get().addEventLog({
       type: 'buildingMoved',
-      description: `移动了建筑「${building.name}」`,
+      description: `移动了建筑到 (${x}%, ${y}%)`,
       playerId: 'p1',
+      playerIds: ['p1'],
       area: 'build',
       buildingId,
+      scoreDelta: 0,
+      teamScoreAfter: currentScore,
     });
   },
 
@@ -272,10 +297,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const building = state.buildings.find(b => b.id === buildingId);
     if (!building || !building.placed) return;
 
+    const currentScore = state.teamScore;
+    const points = -20;
+
     set((s) => ({
       buildings: s.buildings.map((b) =>
         b.id === buildingId ? { ...b, placed: false, position: undefined, placedBy: undefined, placedAt: undefined, confirmed: undefined } : b
       ),
+      teamScore: s.teamScore + points,
       achievements: s.achievements.map((a) => {
         if (a.id === 'a5' && a.progress && a.progress > 0) {
           const newProgress = a.progress - 1;
@@ -287,10 +316,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     get().addEventLog({
       type: 'buildingUndo',
-      description: `撤回了建筑「${building.name}」`,
+      description: '撤回了建筑放置',
       playerId: 'p1',
+      playerIds: ['p1'],
       area: 'build',
       buildingId,
+      scoreDelta: points,
+      teamScoreAfter: currentScore + points,
     });
   },
 
@@ -381,6 +413,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const state = get();
     const topic = state.voteTopics.find(t => t.id === topicId);
     const option = topic?.options.find(o => o.id === optionId);
+    const currentScore = state.teamScore;
+    const points = 5;
+    const voteTask = state.tasks.find(t => t.type === 'vote' && t.status !== 'completed');
 
     set((s) => ({
       voteTopics: s.voteTopics.map((t) =>
@@ -394,33 +429,32 @@ export const useGameStore = create<GameStore>((set, get) => ({
             }
           : t
       ),
+      teamScore: s.teamScore + points,
+      tasks: s.tasks.map((t) =>
+        t.id === voteTask?.id
+          ? {
+              ...t,
+              participants: t.participants?.includes('p1') ? t.participants : [...(t.participants || []), 'p1'],
+              lastScoreRecord: {
+                playerId: 'p1',
+                points,
+                timestamp: new Date(),
+              },
+            }
+          : t
+      ),
     }));
 
     get().addEventLog({
       type: 'voteCast',
       description: `投票选择了「${option?.text || '某个选项'}」`,
       playerId: 'p1',
+      playerIds: ['p1'],
       area: 'tasks',
+      taskId: voteTask?.id,
+      scoreDelta: points,
+      teamScoreAfter: currentScore + points,
     });
-
-    const voteTask = get().tasks.find(t => t.type === 'vote' && t.status !== 'completed');
-    if (voteTask) {
-      set((s) => ({
-        tasks: s.tasks.map((t) =>
-          t.id === voteTask.id
-            ? {
-                ...t,
-                participants: t.participants?.includes('p1') ? t.participants : [...(t.participants || []), 'p1'],
-                lastScoreRecord: {
-                  playerId: 'p1',
-                  points: 0,
-                  timestamp: new Date(),
-                },
-              }
-            : t
-        ),
-      }));
-    }
   },
 
   answerQuiz: (questionIndex, answer) => {
@@ -456,6 +490,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   sendHint: (content) => {
+    const currentScore = get().teamScore;
     get().addSystemMessage(`💡 主持人提示：${content}`);
     get().addHighlight({
       type: 'teamWork',
@@ -465,9 +500,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     });
     get().addEventLog({
       type: 'hostHint',
-      description: `主持人提示：${content}`,
+      description: `💡 主持人提示：${content}`,
       playerId: 'p1',
+      playerIds: ['p1'],
       area: 'host',
+      scoreDelta: 0,
+      teamScoreAfter: currentScore,
     });
   },
 
@@ -478,6 +516,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const currentScore = get().teamScore;
     const points = 15;
+    const findTask = state.tasks.find(t => t.type === 'findItem' && t.status !== 'completed');
+    const player = MOCK_PLAYERS.find(p => p.id === playerId);
 
     set((s) => ({
       hiddenItems: s.hiddenItems.map((i) =>
@@ -511,14 +551,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     get().addEventLog({
       type: 'itemFound',
-      description: `找到了隐藏物品「${item.name}」`,
+      description: `${player?.name || '某玩家'} 找到隐藏物品 ${item.name}`,
       playerId,
+      playerIds: [playerId],
       area: 'tasks',
+      taskId: findTask?.id,
       scoreDelta: points,
       teamScoreAfter: currentScore + points,
     });
 
-    const player = MOCK_PLAYERS.find(p => p.id === playerId);
     get().addSystemMessage(`${player?.name || '某玩家'} 找到了 ${item.name}！+15分`);
   },
 
@@ -527,10 +568,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const piece = state.puzzlePieces.find(p => p.id === pieceId);
     if (!piece || piece.isPlaced) return;
 
+    const currentScore = get().teamScore;
+    const points = 10;
+    const puzzleTask = state.tasks.find(t => t.type === 'puzzle' && t.status !== 'completed');
+    const player = MOCK_PLAYERS.find(p => p.id === 'p1');
+
     set((s) => ({
       puzzlePieces: s.puzzlePieces.map((p) =>
         p.id === pieceId ? { ...p, currentX: x, currentY: y, isPlaced: true } : p
       ),
+      teamScore: s.teamScore + points,
       tasks: s.tasks.map((t) => {
         if (t.type === 'puzzle' && t.status !== 'completed') {
           const placedCount = s.puzzlePieces.filter(p => p.isPlaced || p.id === pieceId).length;
@@ -540,7 +587,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             participants: t.participants?.includes('p1') ? t.participants : [...(t.participants || []), 'p1'],
             lastScoreRecord: {
               playerId: 'p1',
-              points: 0,
+              points,
               timestamp: new Date(),
             },
             remainingTarget: Math.max(0, remaining),
@@ -552,9 +599,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     get().addEventLog({
       type: 'puzzlePlaced',
-      description: `放置了拼图块 #${pieceId}`,
+      description: `${player?.name || '玩家'} 放置了一块拼图（${x}, ${y}）`,
       playerId: 'p1',
+      playerIds: ['p1'],
       area: 'tasks',
+      taskId: puzzleTask?.id,
+      scoreDelta: points,
+      teamScoreAfter: currentScore + points,
     });
   },
 
@@ -616,6 +667,38 @@ export const useGameStore = create<GameStore>((set, get) => ({
     localStorage.removeItem(STORAGE_KEY);
     set(originalInitialState);
   },
+
+  renameTeam: (teamId, newName) =>
+    set((state) => ({
+      teams: state.teams.map((t) =>
+        t.id === teamId ? { ...t, name: newName } : t
+      ),
+    })),
+
+  setTeamCaptain: (teamId, playerId) => {
+    set((state) => ({
+      teams: state.teams.map((t) =>
+        t.id === teamId ? { ...t, captainId: playerId } : t
+      ),
+    }));
+    const playerStore = usePlayerStore.getState();
+    playerStore.players.forEach((p) => {
+      if (p.teamId === teamId) {
+        playerStore.updatePlayer(p.id, { isTeamCaptain: p.id === playerId });
+      }
+    });
+  },
+
+  addTeam: (team) => {
+    const newTeam: Team = {
+      ...team,
+      id: `team-${Date.now()}`,
+    };
+    set((state) => ({
+      teams: [...state.teams, newTeam],
+    }));
+    return newTeam;
+  },
 }));
 
 useGameStore.subscribe((state) => {
@@ -637,6 +720,7 @@ useGameStore.subscribe((state) => {
       hiddenItems: state.hiddenItems,
       puzzlePieces: state.puzzlePieces,
       eventLogs: state.eventLogs,
+      teams: state.teams,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
   } catch {}

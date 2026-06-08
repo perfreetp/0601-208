@@ -32,40 +32,28 @@ const statusBadgeColors: Record<TaskStatus, string> = {
   completed: 'bg-aurora-green/20 text-aurora-green border-aurora-green/40',
 };
 
-const MOCK_TASK_PARTICIPANTS: Record<string, string[]> = {
-  t1: ['p1', 'p2', 'p3'],
-  t2: ['p2', 'p4', 'p5', 'p6'],
-  t3: ['p1', 'p3'],
-  t4: ['p1', 'p2', 'p5'],
-  t5: [],
-};
-
-const MOCK_LAST_SCORE: Record<string, { playerName: string; points: number; time: Date } | null> = {
-  t1: { playerName: '小明', points: 15, time: new Date(Date.now() - 12000) },
-  t2: { playerName: '阿强', points: 20, time: new Date(Date.now() - 45000) },
-  t3: null,
-  t4: null,
-  t5: null,
-};
-
 function PuzzleTab() {
   const { puzzlePieces, placePuzzlePiece, tasks, completeTask, updateTaskStatus, isPaused } = useGameStore();
   const [selectedPieceId, setSelectedPieceId] = useState<number | null>(null);
   const [animatingCell, setAnimatingCell] = useState<string | null>(null);
   const placedCount = puzzlePieces.filter(p => p.isPlaced).length;
   const puzzleTask = tasks.find(t => t.type === 'puzzle');
+  const completedTasks = tasks.filter(t => t.status === 'completed').map(t => t.id);
+  const isPuzzleCompleted = puzzleTask?.status === 'completed' || completedTasks.includes(puzzleTask?.id || '');
   const hasCompleted = useRef(false);
 
   useEffect(() => {
-    if (placedCount === 9 && puzzleTask && !hasCompleted.current) {
+    if (placedCount === 9 && puzzleTask && puzzleTask.status !== 'completed' && !hasCompleted.current) {
       hasCompleted.current = true;
       completeTask(puzzleTask.id);
+    }
+    if (puzzleTask?.status === 'completed' && placedCount < 9) {
+      hasCompleted.current = true;
     }
   }, [placedCount, puzzleTask, completeTask]);
 
   const handleCellClick = (x: number, y: number) => {
-    if (isPaused || selectedPieceId === null) return;
-    const cellIndex = y * 3 + x;
+    if (isPaused || selectedPieceId === null || isPuzzleCompleted) return;
     const existingPiece = puzzlePieces.find(p => p.isPlaced && p.currentX === x && p.currentY === y);
     if (existingPiece) return;
 
@@ -81,13 +69,62 @@ function PuzzleTab() {
   };
 
   const handlePieceClick = (pieceId: number) => {
-    if (isPaused) return;
+    if (isPaused || isPuzzleCompleted) return;
     setSelectedPieceId(prev => prev === pieceId ? null : pieceId);
   };
 
   const getPlacedPiece = (x: number, y: number) => {
     return puzzlePieces.find(p => p.isPlaced && p.currentX === x && p.currentY === y);
   };
+
+  if (isPuzzleCompleted) {
+    return (
+      <div className="space-y-6 relative">
+        {isPaused && (
+          <div className="absolute inset-0 z-50 bg-black/70 flex items-center justify-center rounded-xl">
+            <div className="text-center">
+              <div className="text-5xl mb-4">⏸️</div>
+              <p className="text-2xl text-white font-bold">游戏已暂停</p>
+            </div>
+          </div>
+        )}
+
+        <div className="text-center py-6">
+          <div className="text-6xl mb-4">🏆</div>
+          <h3 className="title-font text-2xl text-white">恭喜！拼图挑战已完成</h3>
+          <p className="text-aurora-green font-bold text-xl mt-2">团队获得 +100 分</p>
+          <p className="text-white/60 text-sm mt-1">{placedCount}/9 块已全部放置</p>
+        </div>
+
+        <div className="glass-panel p-6">
+          <div className="grid grid-cols-3 gap-2 aspect-square max-w-md mx-auto">
+            {Array.from({ length: 9 }).map((_, idx) => {
+              const x = idx % 3;
+              const y = Math.floor(idx / 3);
+              const placedPiece = getPlacedPiece(x, y);
+              return (
+                <div
+                  key={idx}
+                  className={cn(
+                    'aspect-square rounded-lg flex items-center justify-center text-4xl transition-all duration-300',
+                    placedPiece
+                      ? 'bg-gradient-to-br from-neon-cyan/30 to-starlight-purple/30 border-2 border-neon-cyan/50 shadow-lg shadow-neon-cyan/20'
+                      : 'bg-white/5 border-2 border-dashed border-white/20'
+                  )}
+                >
+                  {placedPiece ? (
+                    <span className="text-3xl">✨</span>
+                  ) : (
+                    <span className="text-white/30 text-2xl">?</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 relative">
@@ -577,6 +614,9 @@ function TeamBoard() {
   };
 
   const getRemainingTarget = (task: typeof tasks[number]) => {
+    if (typeof task.remainingTarget === 'number') {
+      return `剩余 ${task.remainingTarget}`;
+    }
     const progress = getTaskProgress(task);
     const remaining = Math.max(0, progress.total - progress.current);
     switch (task.type) {
@@ -588,8 +628,8 @@ function TeamBoard() {
     }
   };
 
-  const getTaskParticipants = (taskId: string) => {
-    const ids = MOCK_TASK_PARTICIPANTS[taskId] || [];
+  const getTaskParticipants = (task: typeof tasks[number]) => {
+    const ids = task.participants || [];
     return ids.map(id => players.find(p => p.id === id)).filter(Boolean) as typeof players;
   };
 
@@ -605,9 +645,14 @@ function TeamBoard() {
 
       <div className="space-y-3 flex-1 overflow-y-auto scrollbar-thin pr-1">
         {tasks.map(task => {
-          const progress = getTaskProgress(task);
-          const participants = getTaskParticipants(task.id);
-          const lastScore = MOCK_LAST_SCORE[task.id];
+          const baseProgress = getTaskProgress(task);
+          const isCompleted = task.status === 'completed';
+          const progress = isCompleted
+            ? { current: baseProgress.total, total: baseProgress.total, percent: 100 }
+            : baseProgress;
+          const participants = getTaskParticipants(task);
+          const lastScoreRecord = task.lastScoreRecord;
+          const lastScorePlayer = lastScoreRecord ? players.find(p => p.id === lastScoreRecord.playerId) : null;
 
           return (
             <div
@@ -637,7 +682,7 @@ function TeamBoard() {
 
               <div className="mb-2">
                 <div className="flex justify-between text-xs text-white/50 mb-1">
-                  <span>进度</span>
+                  <span>{isCompleted ? '已完成' : '进度'}</span>
                   <span>{progress.current}/{progress.total}</span>
                 </div>
                 <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
@@ -672,13 +717,13 @@ function TeamBoard() {
               </div>
 
               <div className="text-xs text-white/50 space-y-0.5">
-                {lastScore ? (
+                {lastScoreRecord && lastScorePlayer ? (
                   <p className="flex items-center gap-1">
-                    <span className="text-aurora-green">+{lastScore.points}分</span>
+                    <span className="text-aurora-green">+{lastScoreRecord.points}分</span>
                     <span>·</span>
-                    <span>{lastScore.playerName}</span>
+                    <span>{lastScorePlayer.name}</span>
                     <span>·</span>
-                    <span>{formatRelativeTime(lastScore.time)}</span>
+                    <span>{formatRelativeTime(lastScoreRecord.timestamp)}</span>
                   </p>
                 ) : (
                   <p>暂无得分</p>
