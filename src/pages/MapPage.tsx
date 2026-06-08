@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AREAS, MOCK_BUILDINGS } from '@/data/mockData';
 import { useGameStore } from '@/store/gameStore';
 import { usePlayerStore } from '@/store/playerStore';
@@ -26,9 +27,21 @@ const statusText: Record<TaskStatus, string> = {
   completed: '已完成',
 };
 
+const AREA_ROUTES: Record<GameArea, string> = {
+  lobby: '/lobby',
+  tasks: '/tasks',
+  build: '/build',
+  voice: '/voice',
+  map: '/map',
+  replay: '/replay',
+  host: '/host',
+  island: '/island',
+};
+
 export default function MapPage() {
   const { tasks, completedTasks, teamScore, setCurrentArea, buildings } = useGameStore();
   const { players, currentPlayer } = usePlayerStore();
+  const navigate = useNavigate();
   const [selectedArea, setSelectedArea] = useState<GameArea | null>(null);
 
   useEffect(() => {
@@ -66,6 +79,7 @@ export default function MapPage() {
 
   const handleTeleport = (area: AreaInfo) => {
     setCurrentArea(area.id);
+    navigate(AREA_ROUTES[area.id]);
   };
 
   const placedBuildings = buildings.filter((b) => b.placed);

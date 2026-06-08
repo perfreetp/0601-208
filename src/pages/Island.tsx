@@ -1,9 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AREAS, MOCK_PLAYERS } from '@/data/mockData';
 import { useGameStore } from '@/store/gameStore';
 import { usePlayerStore } from '@/store/playerStore';
 import { cn, getAreaIcon } from '@/lib/utils';
 import type { AreaInfo, GameArea } from '@/types';
+
+const AREA_ROUTES: Record<GameArea, string> = {
+  lobby: '/lobby',
+  tasks: '/tasks',
+  build: '/build',
+  voice: '/voice',
+  map: '/map',
+  replay: '/replay',
+  host: '/host',
+  island: '/island',
+};
 
 interface Particle {
   id: number;
@@ -18,6 +30,7 @@ interface Particle {
 export default function Island() {
   const { setCurrentArea, teamScore } = useGameStore();
   const { players } = usePlayerStore();
+  const navigate = useNavigate();
   const [hoveredArea, setHoveredArea] = useState<GameArea | null>(null);
 
   const particles = useMemo<Particle[]>(() => {
@@ -33,9 +46,8 @@ export default function Island() {
   }, []);
 
   const handleAreaClick = (area: AreaInfo) => {
-    if (area.id !== 'island') {
-      setCurrentArea(area.id);
-    }
+    setCurrentArea(area.id);
+    navigate(AREA_ROUTES[area.id]);
   };
 
   const getPlayersInArea = (areaId: GameArea) => {

@@ -44,6 +44,8 @@ interface GameStore extends GameState {
   addSystemMessage: (content: string) => void;
   castVote: (topicId: string, optionId: string) => void;
   answerQuiz: (questionIndex: number, answer: number) => { correct: boolean; points: number };
+  goToNextQuiz: () => number;
+  sendHint: (content: string) => void;
   findHiddenItem: (itemId: string, playerId: string) => void;
   placePuzzlePiece: (pieceId: number, x: number, y: number) => void;
   consumeMaterials: (recipe: { itemId: string; count: number }[]) => boolean;
@@ -247,11 +249,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
       get().addScore(question.points);
     }
 
-    set({
-      currentQuizIndex: Math.min(questionIndex + 1, state.quizQuestions.length - 1),
-    });
-
     return { correct, points: correct ? question.points : 0 };
+  },
+
+  goToNextQuiz: () => {
+    const state = get();
+    const nextIndex = Math.min(state.currentQuizIndex + 1, state.quizQuestions.length - 1);
+    set({ currentQuizIndex: nextIndex });
+    return nextIndex;
+  },
+
+  sendHint: (content) => {
+    get().addSystemMessage(`💡 主持人提示：${content}`);
+    get().addHighlight({
+      type: 'teamWork',
+      description: `💡 主持人提示：${content}`,
+      playerIds: MOCK_PLAYERS.map(p => p.id),
+    });
   },
 
   findHiddenItem: (itemId, playerId) => {

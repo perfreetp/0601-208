@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import type { BuildingItem } from '@/types';
 import { cn } from '@/lib/utils';
@@ -13,6 +13,8 @@ export default function Build() {
   const { buildings, materials, consumeMaterials, unlockBuilding, placeBuilding } = useGameStore();
   const [selectedBuilding, setSelectedBuilding] = useState<BuildingItem | null>(null);
   const [activeCategory, setActiveCategory] = useState<'all' | 'decoration' | 'landmark' | 'functional'>('all');
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
 
   const filteredBuildings = activeCategory === 'all'
     ? buildings
@@ -36,12 +38,33 @@ export default function Build() {
     }
   };
 
-  const handlePlace = (building: BuildingItem) => {
+  const handlePlace = (building: BuildingItem, x: number, y: number) => {
     if (!building.unlocked || building.placed) return;
-    const x = 20 + Math.random() * 60;
-    const y = 20 + Math.random() * 60;
     placeBuilding(building.id, x, y);
     setSelectedBuilding(null);
+    setMousePos(null);
+  };
+
+  const isPlacingMode = selectedBuilding && selectedBuilding.unlocked && !selectedBuilding.placed;
+
+  const handlePreviewMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isPlacingMode || !previewRef.current) return;
+    const rect = previewRef.current.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    setMousePos({ x, y });
+  };
+
+  const handlePreviewClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isPlacingMode || !previewRef.current || !selectedBuilding) return;
+    const rect = previewRef.current.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    handlePlace(selectedBuilding, x, y);
+  };
+
+  const handlePreviewMouseLeave = () => {
+    setMousePos(null);
   };
 
   return (
@@ -125,7 +148,16 @@ export default function Build() {
             </div>
           </div>
 
-          <div className="flex-1 relative rounded-xl overflow-hidden bg-gradient-to-br from-ocean-dark via-ocean-mid to-deep-ocean">
+          <div 
+            ref={previewRef}
+            className={cn(
+              'flex-1 relative rounded-xl overflow-hidden bg-gradient-to-br from-ocean-dark via-ocean-mid to-deep-ocean transition-all',
+              isPlacingMode && 'cursor-crosshair'
+            )}
+            onMouseMove={handlePreviewMouseMove}
+            onClick={handlePreviewClick}
+            onMouseLeave={handlePreviewMouseLeave}
+          >
             <div className="absolute inset-0 bg-stars opacity-40" />
             <div className="absolute inset-0 bg-aurora opacity-30 animate-aurora" />
             
@@ -153,18 +185,48 @@ export default function Build() {
               </div>
             ))}
 
-            {selectedBuilding && !selectedBuilding.placed && selectedBuilding.unlocked && (
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 glass-panel px-4 py-2 flex items-center gap-3">
-                <span className="text-2xl">{selectedBuilding.icon}</span>
-                <span className="text-white">{selectedBuilding.name}</span>
-                <button
-                  onClick={() => handlePlace(selectedBuilding)}
-                  className="neon-button !py-2 !px-4 text-sm"
+            {isPlacingMode && mousePos && (
+              <>
+                <div
+                  className="absolute pointer-events-none transform -translate-x-1/2 -translate-y-1/2 z-20"
+                  style={{
+                    left: `${mousePos.x}%`,
+                    top: `${mousePos.y}%`,
+                  }}
                 >
-                  放置到岛屿
-                </button>
+                  <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-neon-cyan/30 to-aurora-green/30 backdrop-blur-md border-2 border-neon-cyan/60 flex items-center justify-center text-3xl shadow-lg"
+                    style={{ boxShadow: '0 0 30px rgba(0, 240, 255, 0.4)' }}
+                  >
+                    {selectedBuilding.icon}
+                  </div>
+                </div>
+                <div
+                  className="absolute pointer-events-none w-8 h-8 -translate-x-1/2 -translate-y-1/2 z-30"
+                  style={{
+                    left: `${mousePos.x}%`,
+                    top: `${mousePos.y}%`,
+                  }}
+                >
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-full h-px bg-neon-cyan/80" />
+                  </div>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="h-full w-px bg-neon-cyan/80" />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {isPlacingMode && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 glass-panel px-5 py-2.5 flex items-center gap-2 z-10"
+                style={{ boxShadow: '0 0 20px rgba(0, 240, 255, 0.2)' }}
+              >
+                <span className="text-xl">🎯</span>
+                <span className="text-neon-cyan font-medium">点击岛屿上的位置来放置 {selectedBuilding.name}</span>
               </div>
             )}
+
+            {selectedBuilding && !selectedBuilding.placed && selectedBuilding.unlocked && !isPlacingMode && null}
           </div>
         </div>
 
@@ -241,12 +303,10 @@ export default function Build() {
                 )}
 
                 {selectedBuilding.unlocked && !selectedBuilding.placed && (
-                  <button
-                    onClick={() => handlePlace(selectedBuilding)}
-                    className="w-full py-3 rounded-xl font-semibold bg-gradient-to-r from-aurora-green to-teal-400 text-white hover:shadow-lg hover:shadow-aurora-green/30 active:scale-[0.98] transition-all"
-                  >
-                    🏗️ 放置建筑
-                  </button>
+                  <div className="glass-panel p-3 text-center">
+                    <p className="text-neon-cyan text-sm font-medium">🏗️ 放置模式已激活</p>
+                    <p className="text-xs text-white/60 mt-1">在左侧岛屿预览区域点击任意位置放置建筑</p>
+                  </div>
                 )}
 
                 {selectedBuilding.placed && (

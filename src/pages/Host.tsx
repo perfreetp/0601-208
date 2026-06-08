@@ -15,6 +15,7 @@ import {
   Target,
   CheckCircle2,
   Circle,
+  MessageSquare,
 } from 'lucide-react';
 import { useGameStore } from '@/store/gameStore';
 import { usePlayerStore } from '@/store/playerStore';
@@ -47,10 +48,13 @@ export default function Host() {
     gameTime,
     tasks,
     completedTasks,
+    sendHint,
   } = useGameStore();
   const { players, currentPlayer, updatePlayer } = usePlayerStore();
   const [countdown, setCountdown] = useState(10);
   const [selectedTeam, setSelectedTeam] = useState<string>('all');
+  const [hintContent, setHintContent] = useState('');
+  const [hintSent, setHintSent] = useState(false);
 
   if (!currentPlayer.isHost) {
     return (
@@ -104,6 +108,14 @@ export default function Host() {
     a.download = `game-results-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleSendHint = () => {
+    if (!hintContent.trim()) return;
+    sendHint(hintContent.trim());
+    setHintContent('');
+    setHintSent(true);
+    setTimeout(() => setHintSent(false), 2000);
   };
 
   return (
@@ -164,6 +176,42 @@ export default function Host() {
                     启动
                   </button>
                 </div>
+              </div>
+
+              <div className="pt-4 border-t border-white/10">
+                <div className="flex items-center gap-2 text-white/80 mb-3">
+                  <MessageSquare className="w-5 h-5" />
+                  <h3 className="font-semibold">发送提示</h3>
+                </div>
+                <textarea
+                  value={hintContent}
+                  onChange={(e) => setHintContent(e.target.value)}
+                  placeholder="输入要发送给全体玩家的提示内容..."
+                  className="w-full px-3 py-2.5 rounded-xl bg-ocean-dark border border-white/10 text-white text-sm focus:outline-none focus:border-neon-cyan/50 resize-none"
+                  rows={3}
+                />
+                <button
+                  onClick={handleSendHint}
+                  disabled={!hintContent.trim()}
+                  className={cn(
+                    'w-full mt-2 py-2.5 rounded-xl font-medium transition-all flex items-center justify-center gap-2',
+                    hintContent.trim()
+                      ? 'bg-gradient-to-r from-neon-cyan to-starlight-purple text-white hover:shadow-lg hover:shadow-neon-cyan/30 active:scale-[0.98]'
+                      : 'bg-white/5 text-white/30 cursor-not-allowed'
+                  )}
+                >
+                  {hintSent ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      提示已发送
+                    </>
+                  ) : (
+                    <>
+                      <MessageSquare className="w-4 h-4" />
+                      发送给全体玩家
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           </div>
