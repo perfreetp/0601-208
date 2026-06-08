@@ -216,6 +216,8 @@ export const MOCK_TASKS: Task[] = [
     status: 'completed',
     timeLimit: 180,
     progress: 100,
+    participants: ['p1', 'p2'],
+    remainingTarget: 0,
   },
   {
     id: 't2',
@@ -227,6 +229,13 @@ export const MOCK_TASKS: Task[] = [
     status: 'inProgress',
     timeLimit: 120,
     progress: 60,
+    participants: ['p1', 'p2'],
+    remainingTarget: 2,
+    lastScoreRecord: {
+      playerId: 'p2',
+      points: 15,
+      timestamp: new Date(Date.now() - 120000),
+    },
   },
   {
     id: 't3',
@@ -270,6 +279,9 @@ export const MOCK_BUILDINGS: BuildingItem[] = [
     placed: true,
     unlocked: true,
     position: { x: 30, y: 45 },
+    placedBy: 'p3',
+    placedAt: new Date(Date.now() - 600000),
+    confirmed: true,
   },
   {
     id: 'b2',
@@ -280,6 +292,9 @@ export const MOCK_BUILDINGS: BuildingItem[] = [
     placed: true,
     unlocked: true,
     position: { x: 55, y: 50 },
+    placedBy: 'p2',
+    placedAt: new Date(Date.now() - 500000),
+    confirmed: true,
   },
   {
     id: 'b3',
@@ -347,6 +362,9 @@ export const MOCK_BUILDINGS: BuildingItem[] = [
     placed: true,
     unlocked: true,
     position: { x: 65, y: 55 },
+    placedBy: 'p5',
+    placedAt: new Date(Date.now() - 400000),
+    confirmed: true,
   },
 ];
 

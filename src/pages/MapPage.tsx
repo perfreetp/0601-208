@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { X, User, MapPin } from 'lucide-react';
 import { AREAS, MOCK_BUILDINGS } from '@/data/mockData';
 import { useGameStore } from '@/store/gameStore';
 import { usePlayerStore } from '@/store/playerStore';
@@ -10,8 +11,9 @@ import {
   getDifficultyStars,
   getTaskTypeIcon,
   getTaskTypeName,
+  formatRelativeTime,
 } from '@/lib/utils';
-import type { AreaInfo, GameArea, TaskStatus } from '@/types';
+import type { AreaInfo, BuildingItem, GameArea, TaskStatus } from '@/types';
 
 const statusColors: Record<TaskStatus, string> = {
   locked: 'bg-gray-500/30 text-gray-400 border-gray-500/30',
@@ -43,6 +45,7 @@ export default function MapPage() {
   const { players, currentPlayer } = usePlayerStore();
   const navigate = useNavigate();
   const [selectedArea, setSelectedArea] = useState<GameArea | null>(null);
+  const [selectedBuilding, setSelectedBuilding] = useState<BuildingItem | null>(null);
 
   useEffect(() => {
     const style = document.createElement('style');
@@ -172,16 +175,30 @@ export default function MapPage() {
 
                   {placedBuildings.map((b) =>
                     b.position ? (
-                      <text
+                      <g
                         key={b.id}
-                        x={(b.position.x / 100) * 600}
-                        y={(b.position.y / 100) * 450}
-                        textAnchor="middle"
-                        dominantBaseline="middle"
-                        fontSize="18"
+                        className="cursor-pointer"
+                        onClick={() => setSelectedBuilding(b)}
                       >
-                        {b.icon}
-                      </text>
+                        <circle
+                          cx={(b.position.x / 100) * 600}
+                          cy={(b.position.y / 100) * 450}
+                          r="16"
+                          fill="white"
+                          fillOpacity="0.1"
+                          stroke="white"
+                          strokeOpacity="0.2"
+                        />
+                        <text
+                          x={(b.position.x / 100) * 600}
+                          y={(b.position.y / 100) * 450}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fontSize="18"
+                        >
+                          {b.icon}
+                        </text>
+                      </g>
                     ) : null
                   )}
                 </svg>
@@ -418,6 +435,82 @@ export default function MapPage() {
           </div>
         </div>
       </div>
+
+      {selectedBuilding && (() => {
+        const placer = selectedBuilding.placedBy ? players.find(p => p.id === selectedBuilding.placedBy) : null;
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            onClick={() => setSelectedBuilding(null)}
+          >
+            <div
+              className="glass-panel w-full max-w-md p-6 m-4 animate-bounce-in"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center text-3xl">
+                    {selectedBuilding.icon}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="title-font text-lg text-white">{selectedBuilding.name}</h3>
+                      <span className={cn(
+                        'text-xs px-2 py-0.5 rounded-full',
+                        selectedBuilding.category === 'decoration' && 'bg-neon-cyan/20 text-neon-cyan',
+                        selectedBuilding.category === 'landmark' && 'bg-gold-yellow/20 text-gold-yellow',
+                        selectedBuilding.category === 'functional' && 'bg-starlight-light/20 text-starlight-light'
+                      )}>
+                        {selectedBuilding.category === 'decoration' ? '🎨 装饰物' : selectedBuilding.category === 'landmark' ? '🏛️ 地标' : '⚙️ 功能设施'}
+                      </span>
+                    </div>
+                    {selectedBuilding.confirmed ? (
+                      <span className="text-xs text-aurora-green">✓ 已确认</span>
+                    ) : selectedBuilding.placed ? (
+                      <span className="text-xs text-gold-yellow">● 待确认</span>
+                    ) : null}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedBuilding(null)}
+                  className="p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <p className="text-sm text-white/70 mb-4">{selectedBuilding.description}</p>
+
+              {selectedBuilding.position && (
+                <div className="flex items-center gap-2 text-sm text-white/80 mb-3">
+                  <MapPin size={16} className="text-neon-cyan flex-shrink-0" />
+                  <span>位置：{selectedBuilding.position.x.toFixed(1)}%, {selectedBuilding.position.y.toFixed(1)}%</span>
+                </div>
+              )}
+
+              {selectedBuilding.placedBy && selectedBuilding.placedAt && (
+                <div className="glass-panel p-3 flex items-center gap-3">
+                  <div
+                    className="w-10 h-10 rounded-full flex items-center justify-center text-sm flex-shrink-0"
+                    style={{ backgroundColor: placer?.color || '#666' }}
+                  >
+                    {placer?.avatarEmoji || <User size={16} />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 text-sm text-white/90">
+                      <User size={14} />
+                      <span>由 {placer?.name || '未知玩家'} 放置</span>
+                    </div>
+                    <div className="text-xs text-white/50 mt-0.5">
+                      放置于 {formatRelativeTime(selectedBuilding.placedAt)}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

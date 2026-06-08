@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useGameStore } from '@/store/gameStore';
-import type { TaskType } from '@/types';
-import { cn, getTaskTypeIcon, getTaskTypeName, getDifficultyStars, formatTime } from '@/lib/utils';
+import { usePlayerStore } from '@/store/playerStore';
+import type { TaskType, TaskStatus } from '@/types';
+import { cn, getTaskTypeIcon, getTaskTypeName, getDifficultyStars, formatTime, formatRelativeTime, formatDate } from '@/lib/utils';
 
 const TABS: { type: TaskType; icon: string; name: string; color: string }[] = [
   { type: 'puzzle', icon: '🧩', name: '拼图挑战', color: 'from-neon-cyan to-neon-cyan-dim' },
@@ -9,6 +10,43 @@ const TABS: { type: TaskType; icon: string; name: string; color: string }[] = [
   { type: 'vote', icon: '🗳️', name: '投票决策', color: 'from-gold-yellow to-orange-400' },
   { type: 'quiz', icon: '❓', name: '限时问答', color: 'from-coral-orange to-coral-light' },
 ];
+
+const statusBorderColors: Record<TaskStatus, string> = {
+  completed: 'border-aurora-green/30',
+  inProgress: 'border-gold-yellow/30',
+  available: 'border-neon-cyan/30',
+  locked: 'border-gray-500/30 opacity-60',
+};
+
+const statusText: Record<TaskStatus, string> = {
+  locked: '未解锁',
+  available: '可挑战',
+  inProgress: '进行中',
+  completed: '已完成',
+};
+
+const statusBadgeColors: Record<TaskStatus, string> = {
+  locked: 'bg-gray-500/30 text-gray-400 border-gray-500/30',
+  available: 'bg-neon-cyan/20 text-neon-cyan border-neon-cyan/40',
+  inProgress: 'bg-gold-yellow/20 text-gold-yellow border-gold-yellow/40',
+  completed: 'bg-aurora-green/20 text-aurora-green border-aurora-green/40',
+};
+
+const MOCK_TASK_PARTICIPANTS: Record<string, string[]> = {
+  t1: ['p1', 'p2', 'p3'],
+  t2: ['p2', 'p4', 'p5', 'p6'],
+  t3: ['p1', 'p3'],
+  t4: ['p1', 'p2', 'p5'],
+  t5: [],
+};
+
+const MOCK_LAST_SCORE: Record<string, { playerName: string; points: number; time: Date } | null> = {
+  t1: { playerName: '小明', points: 15, time: new Date(Date.now() - 12000) },
+  t2: { playerName: '阿强', points: 20, time: new Date(Date.now() - 45000) },
+  t3: null,
+  t4: null,
+  t5: null,
+};
 
 function PuzzleTab() {
   const { puzzlePieces, placePuzzlePiece, tasks, completeTask, updateTaskStatus, isPaused } = useGameStore();
@@ -511,6 +549,240 @@ function QuizTab() {
   );
 }
 
+function TeamBoard() {
+  const { tasks, hiddenItems, puzzlePieces, teamScore, voteTopics, quizQuestions, currentQuizIndex } = useGameStore();
+  const { players } = usePlayerStore();
+
+  const getTaskProgress = (task: typeof tasks[number]) => {
+    switch (task.type) {
+      case 'puzzle': {
+        const placedCount = puzzlePieces.filter(p => p.isPlaced).length;
+        return { current: placedCount, total: 9, percent: Math.round((placedCount / 9) * 100) };
+      }
+      case 'findItem': {
+        const foundCount = hiddenItems.filter(i => i.found).length;
+        return { current: foundCount, total: hiddenItems.length, percent: Math.round((foundCount / hiddenItems.length) * 100) };
+      }
+      case 'vote': {
+        const topic = voteTopics[0];
+        const totalVotes = topic?.totalVotes ?? 0;
+        return { current: totalVotes, total: 6, percent: Math.round((totalVotes / 6) * 100) };
+      }
+      case 'quiz': {
+        return { current: currentQuizIndex + 1, total: quizQuestions.length, percent: Math.round(((currentQuizIndex + 1) / quizQuestions.length) * 100) };
+      }
+      default:
+        return { current: 0, total: 0, percent: task.progress ?? 0 };
+    }
+  };
+
+  const getRemainingTarget = (task: typeof tasks[number]) => {
+    const progress = getTaskProgress(task);
+    const remaining = Math.max(0, progress.total - progress.current);
+    switch (task.type) {
+      case 'puzzle': return `剩余 ${remaining} 块未放置`;
+      case 'findItem': return `剩余 ${remaining} 件宝物`;
+      case 'vote': return `剩余 ${remaining} 人未投`;
+      case 'quiz': return `剩余 ${remaining} 题`;
+      default: return '';
+    }
+  };
+
+  const getTaskParticipants = (taskId: string) => {
+    const ids = MOCK_TASK_PARTICIPANTS[taskId] || [];
+    return ids.map(id => players.find(p => p.id === id)).filter(Boolean) as typeof players;
+  };
+
+  return (
+    <div className="glass-panel p-4 w-full lg:w-64 flex flex-col h-full">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="title-font text-lg text-white flex items-center gap-2">
+          <span>👥</span>
+          团队协作看板
+        </h3>
+        <div className="text-xs text-gold-yellow font-orbitron">{teamScore}分</div>
+      </div>
+
+      <div className="space-y-3 flex-1 overflow-y-auto scrollbar-thin pr-1">
+        {tasks.map(task => {
+          const progress = getTaskProgress(task);
+          const participants = getTaskParticipants(task.id);
+          const lastScore = MOCK_LAST_SCORE[task.id];
+
+          return (
+            <div
+              key={task.id}
+              className={cn(
+                'rounded-xl p-3 border transition-all bg-white/5',
+                statusBorderColors[task.status]
+              )}
+            >
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="flex items-start gap-1.5 flex-1 min-w-0">
+                  <span className="text-base flex-shrink-0">{getTaskTypeIcon(task.type)}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-white truncate">{task.title}</p>
+                    <p className="text-xs text-white/50 mt-0.5">
+                      {getTaskTypeName(task.type)} · {getDifficultyStars(task.difficulty)}
+                    </p>
+                  </div>
+                </div>
+                <span className={cn(
+                  'text-xs px-1.5 py-0.5 rounded-full border flex-shrink-0',
+                  statusBadgeColors[task.status]
+                )}>
+                  {statusText[task.status]}
+                </span>
+              </div>
+
+              <div className="mb-2">
+                <div className="flex justify-between text-xs text-white/50 mb-1">
+                  <span>进度</span>
+                  <span>{progress.current}/{progress.total}</span>
+                </div>
+                <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-neon-cyan to-aurora-green transition-all"
+                    style={{ width: `${progress.percent}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex -space-x-1.5">
+                  {participants.slice(0, 3).map((player) => (
+                    <div
+                      key={player.id}
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-xs border-2 border-deep-ocean"
+                      style={{ backgroundColor: player.color }}
+                      title={player.name}
+                    >
+                      {player.avatarEmoji}
+                    </div>
+                  ))}
+                  {participants.length > 3 && (
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs bg-white/20 text-white/70 border-2 border-deep-ocean">
+                      +{participants.length - 3}
+                    </div>
+                  )}
+                  {participants.length === 0 && (
+                    <span className="text-xs text-white/40">暂无参与</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="text-xs text-white/50 space-y-0.5">
+                {lastScore ? (
+                  <p className="flex items-center gap-1">
+                    <span className="text-aurora-green">+{lastScore.points}分</span>
+                    <span>·</span>
+                    <span>{lastScore.playerName}</span>
+                    <span>·</span>
+                    <span>{formatRelativeTime(lastScore.time)}</span>
+                  </p>
+                ) : (
+                  <p>暂无得分</p>
+                )}
+                <p className="text-white/40">{getRemainingTarget(task)}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MessagePanel() {
+  const { messages } = useGameStore();
+  const { players } = usePlayerStore();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const isHostHint = (content: string) => content.startsWith('💡 主持人提示：');
+
+  const getSenderAvatar = (playerId: string, isSystem: boolean, content: string) => {
+    if (isSystem || isHostHint(content)) return null;
+    const player = players.find(p => p.id === playerId);
+    return player?.avatarEmoji;
+  };
+
+  const getSenderColor = (playerId: string) => {
+    const player = players.find(p => p.id === playerId);
+    return player?.color || '#ffffff';
+  };
+
+  return (
+    <div className="glass-panel p-4 w-full lg:w-72 flex flex-col h-full">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="title-font text-lg text-white flex items-center gap-2">
+          <span>📢</span>
+          公共消息
+        </h3>
+        <span className="text-xs text-white/50">{messages.length} 条</span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto scrollbar-thin pr-1 space-y-2">
+        {messages.map(msg => {
+          const systemMsg = msg.system || isHostHint(msg.content);
+          const hintMsg = isHostHint(msg.content);
+          const avatar = getSenderAvatar(msg.playerId, !!msg.system, msg.content);
+
+          return (
+            <div
+              key={msg.id}
+              className={cn(
+                'rounded-lg p-2.5 text-sm border-l-2',
+                systemMsg && hintMsg && 'border-gold-yellow bg-gold-yellow/5',
+                systemMsg && !hintMsg && 'border-neon-cyan bg-neon-cyan/5',
+                !systemMsg && 'border-white/20 bg-white/5'
+              )}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                {hintMsg ? (
+                  <span className="text-base">💡</span>
+                ) : systemMsg ? (
+                  <span className="text-base">🔔</span>
+                ) : avatar ? (
+                  <div
+                    className="w-5 h-5 rounded-full flex items-center justify-center text-xs"
+                    style={{ backgroundColor: getSenderColor(msg.playerId) }}
+                  >
+                    {avatar}
+                  </div>
+                ) : null}
+                <span className={cn(
+                  'font-medium text-xs',
+                  systemMsg && hintMsg && 'text-gold-yellow',
+                  systemMsg && !hintMsg && 'text-neon-cyan',
+                  !systemMsg && 'text-white/80'
+                )}>
+                  {msg.playerName}
+                </span>
+                <span className="text-xs text-white/40 ml-auto">
+                  {formatDate(msg.timestamp)}
+                </span>
+              </div>
+              <p className={cn(
+                'text-xs leading-relaxed',
+                systemMsg && hintMsg && 'text-gold-yellow/90',
+                systemMsg && !hintMsg && 'text-neon-cyan/90',
+                !systemMsg && 'text-white/70'
+              )}>
+                {msg.content}
+              </p>
+            </div>
+          );
+        })}
+        <div ref={messagesEndRef} />
+      </div>
+    </div>
+  );
+}
+
 export default function Tasks() {
   const [activeTab, setActiveTab] = useState<TaskType>('puzzle');
   const { tasks } = useGameStore();
@@ -525,44 +797,56 @@ export default function Tasks() {
   };
 
   return (
-    <div className="h-full flex flex-col gap-6 p-6">
+    <div className="h-full flex flex-col gap-4 p-4 md:p-6">
       <div>
-        <h1 className="section-title">任务区</h1>
+        <h1 className="section-title">🎯 任务区</h1>
         <p className="text-white/60 ml-4">参与各种趣味任务，为团队赢取积分</p>
       </div>
 
-      <div className="flex flex-wrap gap-3">
-        {TABS.map(tab => {
-          const isActive = activeTab === tab.type;
-          const typeTasks = tasks.filter(t => t.type === tab.type);
-          const completedCount = typeTasks.filter(t => t.status === 'completed').length;
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 min-h-0">
+        <div className="lg:col-span-3 order-2 lg:order-1 max-h-[40vh] lg:max-h-none">
+          <TeamBoard />
+        </div>
 
-          return (
-            <button
-              key={tab.type}
-              onClick={() => setActiveTab(tab.type)}
-              className={cn(
-                'flex items-center gap-3 px-5 py-3 rounded-xl font-semibold transition-all duration-300',
-                isActive
-                  ? `bg-gradient-to-r ${tab.color} text-white shadow-lg scale-105`
-                  : 'glass-panel-hover text-white/70'
-              )}
-            >
-              <span className="text-xl">{tab.icon}</span>
-              <span>{tab.name}</span>
-              <span className={cn(
-                'text-xs px-2 py-0.5 rounded-full',
-                isActive ? 'bg-white/20' : 'bg-white/10'
-              )}>
-                {completedCount}/{typeTasks.length}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+        <div className="lg:col-span-6 order-1 lg:order-2 flex flex-col min-h-0 gap-4">
+          <div className="flex flex-wrap gap-3">
+            {TABS.map(tab => {
+              const isActive = activeTab === tab.type;
+              const typeTasks = tasks.filter(t => t.type === tab.type);
+              const completedCount = typeTasks.filter(t => t.status === 'completed').length;
 
-      <div className="glass-panel p-6 flex-1 overflow-y-auto scrollbar-thin">
-        {renderTabContent()}
+              return (
+                <button
+                  key={tab.type}
+                  onClick={() => setActiveTab(tab.type)}
+                  className={cn(
+                    'flex items-center gap-3 px-5 py-3 rounded-xl font-semibold transition-all duration-300',
+                    isActive
+                      ? `bg-gradient-to-r ${tab.color} text-white shadow-lg scale-105`
+                      : 'glass-panel-hover text-white/70'
+                  )}
+                >
+                  <span className="text-xl">{tab.icon}</span>
+                  <span>{tab.name}</span>
+                  <span className={cn(
+                    'text-xs px-2 py-0.5 rounded-full',
+                    isActive ? 'bg-white/20' : 'bg-white/10'
+                  )}>
+                    {completedCount}/{typeTasks.length}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="glass-panel p-6 flex-1 overflow-y-auto scrollbar-thin min-h-0">
+            {renderTabContent()}
+          </div>
+        </div>
+
+        <div className="lg:col-span-3 order-3 max-h-[40vh] lg:max-h-none">
+          <MessagePanel />
+        </div>
       </div>
     </div>
   );

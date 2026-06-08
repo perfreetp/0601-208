@@ -1,7 +1,9 @@
 import { useState, useRef } from 'react';
+import { Undo2, Check, User } from 'lucide-react';
 import { useGameStore } from '@/store/gameStore';
+import { usePlayerStore } from '@/store/playerStore';
 import type { BuildingItem } from '@/types';
-import { cn } from '@/lib/utils';
+import { cn, formatRelativeTime } from '@/lib/utils';
 
 const CATEGORY_INFO = {
   decoration: { name: '装饰物', icon: '🎨', color: 'text-neon-cyan' },
@@ -10,10 +12,12 @@ const CATEGORY_INFO = {
 };
 
 export default function Build() {
-  const { buildings, materials, consumeMaterials, unlockBuilding, placeBuilding } = useGameStore();
+  const { buildings, materials, consumeMaterials, unlockBuilding, placeBuilding, moveBuilding, undoBuilding, confirmBuilding } = useGameStore();
+  const { players } = usePlayerStore();
   const [selectedBuilding, setSelectedBuilding] = useState<BuildingItem | null>(null);
   const [activeCategory, setActiveCategory] = useState<'all' | 'decoration' | 'landmark' | 'functional'>('all');
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const [draggingBuilding, setDraggingBuilding] = useState<BuildingItem | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
 
   const filteredBuildings = activeCategory === 'all'
@@ -21,6 +25,11 @@ export default function Build() {
     : buildings.filter(b => b.category === activeCategory);
 
   const placedBuildings = buildings.filter(b => b.placed);
+
+  const getPlacedByPlayer = (building: BuildingItem) => {
+    if (!building.placedBy) return null;
+    return players.find(p => p.id === building.placedBy) || null;
+  };
 
   const canCraft = (building: BuildingItem) => {
     if (!building.recipe) return building.unlocked;
@@ -46,9 +55,10 @@ export default function Build() {
   };
 
   const isPlacingMode = selectedBuilding && selectedBuilding.unlocked && !selectedBuilding.placed;
+  const isDraggingMode = !!draggingBuilding;
 
   const handlePreviewMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isPlacingMode || !previewRef.current) return;
+    if ((!isPlacingMode && !isDraggingMode) || !previewRef.current) return;
     const rect = previewRef.current.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
@@ -56,10 +66,19 @@ export default function Build() {
   };
 
   const handlePreviewClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isPlacingMode || !previewRef.current || !selectedBuilding) return;
+    if (!previewRef.current) return;
     const rect = previewRef.current.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
+
+    if (isDraggingMode && draggingBuilding) {
+      moveBuilding(draggingBuilding.id, x, y);
+      setDraggingBuilding(null);
+      setMousePos(null);
+      return;
+    }
+
+    if (!isPlacingMode || !selectedBuilding) return;
     handlePlace(selectedBuilding, x, y);
   };
 
@@ -126,10 +145,25 @@ export default function Build() {
                       <div className="flex items-center gap-2">
                         <span className="text-white font-medium truncate">{building.name}</span>
                         {building.placed && (
-                          <span className="text-xs text-aurora-green">✓已放置</span>
+                          <span className={cn(
+                            'text-xs',
+                            building.confirmed ? 'text-aurora-green' : 'text-gold-yellow'
+                          )}>
+                            {building.confirmed ? '✓已确认' : '●待确认'}
+                          </span>
                         )}
                       </div>
                       <span className={cn('text-xs', catInfo.color)}>{catInfo.name}</span>
+                      {building.placedBy && building.placedAt && (() => {
+                        const placer = getPlacedByPlayer(building);
+                        return (
+                          <div className="flex items-center gap-1 mt-0.5 text-xs text-white/50">
+                            {placer?.avatarEmoji}
+                            <span>{placer?.name || '未知'}</span>
+                            <span>· {formatRelativeTime(building.placedAt)}</span>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </button>
@@ -152,7 +186,7 @@ export default function Build() {
             ref={previewRef}
             className={cn(
               'flex-1 relative rounded-xl overflow-hidden bg-gradient-to-br from-ocean-dark via-ocean-mid to-deep-ocean transition-all',
-              isPlacingMode && 'cursor-crosshair'
+              (isPlacingMode || isDraggingMode) && 'cursor-crosshair'
             )}
             onMouseMove={handlePreviewMouseMove}
             onClick={handlePreviewClick}
@@ -168,14 +202,28 @@ export default function Build() {
             {placedBuildings.map(building => (
               <div
                 key={building.id}
-                className="absolute transform -translate-x-1/2 -translate-y-1/2 animate-bounce-in"
+                className={cn(
+                  'absolute transform -translate-x-1/2 -translate-y-1/2 animate-bounce-in',
+                  draggingBuilding?.id === building.id && 'opacity-30'
+                )}
                 style={{
                   left: `${building.position?.x ?? 50}%`,
                   top: `${building.position?.y ?? 50}%`,
                 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (selectedBuilding && selectedBuilding.placed && selectedBuilding.id === building.id) {
+                    setDraggingBuilding(building);
+                  }
+                }}
               >
                 <div className="relative group">
-                  <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-white/20 to-white/5 backdrop-blur-md border border-white/20 flex items-center justify-center text-3xl shadow-lg hover:scale-110 transition-transform cursor-pointer">
+                  <div className={cn(
+                    'w-14 h-14 rounded-xl backdrop-blur-md border flex items-center justify-center text-3xl shadow-lg hover:scale-110 transition-transform cursor-pointer',
+                    selectedBuilding?.id === building.id
+                      ? 'bg-gradient-to-br from-neon-cyan/30 to-aurora-green/30 border-neon-cyan/50'
+                      : 'bg-gradient-to-br from-white/20 to-white/5 border-white/20'
+                  )}>
                     {building.icon}
                   </div>
                   <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 text-xs text-white/80 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
@@ -185,7 +233,7 @@ export default function Build() {
               </div>
             ))}
 
-            {isPlacingMode && mousePos && (
+            {(isPlacingMode || isDraggingMode) && mousePos && (
               <>
                 <div
                   className="absolute pointer-events-none transform -translate-x-1/2 -translate-y-1/2 z-20"
@@ -197,7 +245,7 @@ export default function Build() {
                   <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-neon-cyan/30 to-aurora-green/30 backdrop-blur-md border-2 border-neon-cyan/60 flex items-center justify-center text-3xl shadow-lg"
                     style={{ boxShadow: '0 0 30px rgba(0, 240, 255, 0.4)' }}
                   >
-                    {selectedBuilding.icon}
+                    {(isPlacingMode ? selectedBuilding : draggingBuilding)?.icon}
                   </div>
                 </div>
                 <div
@@ -223,6 +271,15 @@ export default function Build() {
               >
                 <span className="text-xl">🎯</span>
                 <span className="text-neon-cyan font-medium">点击岛屿上的位置来放置 {selectedBuilding.name}</span>
+              </div>
+            )}
+
+            {isDraggingMode && draggingBuilding && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 glass-panel px-5 py-2.5 flex items-center gap-2 z-10"
+                style={{ boxShadow: '0 0 20px rgba(0, 240, 255, 0.2)' }}
+              >
+                <span className="text-xl">↔️</span>
+                <span className="text-neon-cyan font-medium">拖动「{draggingBuilding.name}」中 - 点击确定新位置</span>
               </div>
             )}
 
@@ -252,12 +309,106 @@ export default function Build() {
             
             {selectedBuilding ? (
               <div className="flex-1 overflow-y-auto scrollbar-thin space-y-4">
-                <div className="glass-panel p-4 text-center">
-                  <div className="text-4xl mb-2">
-                    {selectedBuilding.unlocked ? selectedBuilding.icon : '🔒'}
+                <div className="glass-panel p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className={cn(
+                      'w-16 h-16 rounded-xl flex items-center justify-center text-4xl flex-shrink-0',
+                      selectedBuilding.unlocked
+                        ? 'bg-gradient-to-br from-white/15 to-white/5'
+                        : 'bg-ocean-dark'
+                    )}>
+                      {selectedBuilding.unlocked ? selectedBuilding.icon : '🔒'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-white font-semibold text-base">{selectedBuilding.name}</span>
+                        <span className={cn(
+                          'text-xs px-2 py-0.5 rounded-full',
+                          selectedBuilding.category === 'decoration' && 'bg-neon-cyan/20 text-neon-cyan',
+                          selectedBuilding.category === 'landmark' && 'bg-gold-yellow/20 text-gold-yellow',
+                          selectedBuilding.category === 'functional' && 'bg-starlight-light/20 text-starlight-light'
+                        )}>
+                          {CATEGORY_INFO[selectedBuilding.category].icon} {CATEGORY_INFO[selectedBuilding.category].name}
+                        </span>
+                      </div>
+                      <p className="text-sm text-white/60 mt-1">{selectedBuilding.description}</p>
+                    </div>
                   </div>
-                  <div className="text-white font-semibold">{selectedBuilding.name}</div>
-                  <div className="text-sm text-white/60 mt-1">{selectedBuilding.description}</div>
+
+                  {selectedBuilding.placed && selectedBuilding.position && (
+                    <div className="pt-2 border-t border-white/10">
+                      <div className="flex items-center gap-2 text-sm text-white/70">
+                        <span>📍</span>
+                        <span>位置坐标：{selectedBuilding.position.x.toFixed(1)}%, {selectedBuilding.position.y.toFixed(1)}%</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedBuilding.placedBy && selectedBuilding.placedAt && (() => {
+                    const placer = getPlacedByPlayer(selectedBuilding);
+                    return (
+                      <div className="pt-2 border-t border-white/10">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-xs flex-shrink-0"
+                            style={{ backgroundColor: placer?.color || '#666' }}
+                          >
+                            {placer?.avatarEmoji || <User size={12} />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1 text-sm text-white/80">
+                              <User size={12} />
+                              <span>由 {placer?.name || '未知玩家'} 放置</span>
+                            </div>
+                            <div className="text-xs text-white/50 mt-0.5">
+                              放置于 {formatRelativeTime(selectedBuilding.placedAt)}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {selectedBuilding.placed && selectedBuilding.confirmed && (
+                    <div className="pt-2 border-t border-white/10">
+                      <div className="flex items-center gap-1.5 text-aurora-green text-sm">
+                        <Check size={16} />
+                        <span className="font-medium">已确认</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedBuilding.placed && !selectedBuilding.confirmed && (
+                    <div className="pt-2 border-t border-white/10 space-y-2">
+                      <div className="text-xs text-gold-yellow flex items-center gap-1">
+                        <span>⚠️</span>
+                        <span>该建筑尚未确认，可撤回或确认</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            confirmBuilding(selectedBuilding.id);
+                            const updated = buildings.find(b => b.id === selectedBuilding.id);
+                            if (updated) setSelectedBuilding({ ...updated, confirmed: true });
+                          }}
+                          className="flex-1 py-2.5 rounded-xl font-semibold transition-all bg-aurora-green/20 text-aurora-green border border-aurora-green/40 hover:bg-aurora-green/30 flex items-center justify-center gap-1.5 active:scale-[0.98]"
+                        >
+                          <Check size={16} />
+                          确认放置
+                        </button>
+                        <button
+                          onClick={() => {
+                            undoBuilding(selectedBuilding.id);
+                            setSelectedBuilding(null);
+                          }}
+                          className="flex-1 py-2.5 rounded-xl font-semibold transition-all bg-coral-orange/20 text-coral-orange border border-coral-orange/40 hover:bg-coral-orange/30 flex items-center justify-center gap-1.5 active:scale-[0.98]"
+                        >
+                          <Undo2 size={16} />
+                          撤回放置
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {selectedBuilding.recipe && !selectedBuilding.unlocked && (
@@ -310,8 +461,8 @@ export default function Build() {
                 )}
 
                 {selectedBuilding.placed && (
-                  <div className="text-center py-3 text-aurora-green">
-                    ✓ 该建筑已放置在岛屿上
+                  <div className="glass-panel p-3 text-center">
+                    <p className="text-white/70 text-xs">💡 选中该建筑后，在预览区点击建筑图标可拖动位置</p>
                   </div>
                 )}
               </div>

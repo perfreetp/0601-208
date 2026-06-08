@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { X, User, MapPin } from 'lucide-react';
 import { AREAS, MOCK_PLAYERS } from '@/data/mockData';
 import { useGameStore } from '@/store/gameStore';
 import { usePlayerStore } from '@/store/playerStore';
-import { cn, getAreaIcon } from '@/lib/utils';
-import type { AreaInfo, GameArea } from '@/types';
+import { cn, getAreaIcon, formatRelativeTime } from '@/lib/utils';
+import type { AreaInfo, BuildingItem, GameArea } from '@/types';
 
 const AREA_ROUTES: Record<GameArea, string> = {
   lobby: '/lobby',
@@ -28,10 +29,11 @@ interface Particle {
 }
 
 export default function Island() {
-  const { setCurrentArea, teamScore } = useGameStore();
+  const { setCurrentArea, teamScore, buildings } = useGameStore();
   const { players } = usePlayerStore();
   const navigate = useNavigate();
   const [hoveredArea, setHoveredArea] = useState<GameArea | null>(null);
+  const [selectedBuilding, setSelectedBuilding] = useState<BuildingItem | null>(null);
 
   const particles = useMemo<Particle[]>(() => {
     return Array.from({ length: 40 }, (_, i) => ({
@@ -198,6 +200,30 @@ export default function Island() {
             <circle cx="300" cy="290" r="6" fill="#3d7a4e" opacity="0.5" />
           </svg>
 
+          {buildings.filter(b => b.placed && b.position).map((building) => (
+            <div
+              key={building.id}
+              className="absolute group cursor-pointer animate-bounce-in"
+              style={{
+                left: `${building.position!.x}%`,
+                top: `${building.position!.y}%`,
+                transform: 'translate(-50%, -50%)',
+                zIndex: 5,
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedBuilding(building);
+              }}
+            >
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-white/20 to-white/5 backdrop-blur-md border border-white/20 flex items-center justify-center text-2xl shadow-lg hover:scale-110 transition-transform">
+                {building.icon}
+              </div>
+              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs text-white/80 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                {building.name}
+              </div>
+            </div>
+          ))}
+
           {AREAS.map((area) => {
             const playersHere = getPlayersInArea(area.id);
             const isHovered = hoveredArea === area.id;
@@ -333,6 +359,82 @@ export default function Island() {
           </div>
         </div>
       </div>
+
+      {selectedBuilding && (() => {
+        const placer = selectedBuilding.placedBy ? players.find(p => p.id === selectedBuilding.placedBy) : null;
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            onClick={() => setSelectedBuilding(null)}
+          >
+            <div
+              className="glass-panel w-full max-w-md p-6 m-4 animate-bounce-in"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-white/15 to-white/5 flex items-center justify-center text-3xl">
+                    {selectedBuilding.icon}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="title-font text-lg text-white">{selectedBuilding.name}</h3>
+                      <span className={cn(
+                        'text-xs px-2 py-0.5 rounded-full',
+                        selectedBuilding.category === 'decoration' && 'bg-neon-cyan/20 text-neon-cyan',
+                        selectedBuilding.category === 'landmark' && 'bg-gold-yellow/20 text-gold-yellow',
+                        selectedBuilding.category === 'functional' && 'bg-starlight-light/20 text-starlight-light'
+                      )}>
+                        {selectedBuilding.category === 'decoration' ? '🎨 装饰物' : selectedBuilding.category === 'landmark' ? '🏛️ 地标' : '⚙️ 功能设施'}
+                      </span>
+                    </div>
+                    {selectedBuilding.confirmed ? (
+                      <span className="text-xs text-aurora-green">✓ 已确认</span>
+                    ) : selectedBuilding.placed ? (
+                      <span className="text-xs text-gold-yellow">● 待确认</span>
+                    ) : null}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedBuilding(null)}
+                  className="p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <p className="text-sm text-white/70 mb-4">{selectedBuilding.description}</p>
+
+              {selectedBuilding.position && (
+                <div className="flex items-center gap-2 text-sm text-white/80 mb-3">
+                  <MapPin size={16} className="text-neon-cyan flex-shrink-0" />
+                  <span>位置：{selectedBuilding.position.x.toFixed(1)}%, {selectedBuilding.position.y.toFixed(1)}%</span>
+                </div>
+              )}
+
+              {selectedBuilding.placedBy && selectedBuilding.placedAt && (
+                <div className="glass-panel p-3 flex items-center gap-3">
+                  <div
+                    className="w-10 h-10 rounded-full flex items-center justify-center text-sm flex-shrink-0"
+                    style={{ backgroundColor: placer?.color || '#666' }}
+                  >
+                    {placer?.avatarEmoji || <User size={16} />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 text-sm text-white/90">
+                      <User size={14} />
+                      <span>由 {placer?.name || '未知玩家'} 放置</span>
+                    </div>
+                    <div className="text-xs text-white/50 mt-0.5">
+                      放置于 {formatRelativeTime(selectedBuilding.placedAt)}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
