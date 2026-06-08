@@ -69,10 +69,62 @@ interface NormalizedEvent {
   buildingId?: string;
 }
 
+const HIGHLIGHT_PRESETS: Record<string, Partial<NormalizedEvent>> = {
+  '星辰拼图': { area: 'tasks', scoreDelta: 100, teamScoreAfter: 1425 },
+  '找到宝藏': { area: 'tasks', scoreDelta: 80, teamScoreAfter: 1325 },
+  '完美配合': { area: 'tasks', scoreDelta: 50, teamScoreAfter: 1245 },
+  '连续答对': { area: 'tasks', scoreDelta: 80, teamScoreAfter: 1195 },
+  '解锁成就': { area: 'replay', scoreDelta: 50, teamScoreAfter: 1115 },
+  '团队之星': { area: 'replay', scoreDelta: 50, teamScoreAfter: 1115 },
+  '舞蹈': { area: 'voice', scoreDelta: undefined, teamScoreAfter: undefined },
+};
+
+function inferAreaFromDescription(desc: string, type: string): GameArea {
+  if (desc.includes('拼图') || (type === 'taskComplete' && desc.includes('拼图'))) return 'tasks';
+  if (desc.includes('宝藏') || desc.includes('寻物') || desc.includes('找到')) return 'tasks';
+  if (desc.includes('问答') || desc.includes('答对') || desc.includes('答题')) return 'tasks';
+  if (desc.includes('投票')) return 'tasks';
+  if (desc.includes('成就')) return 'replay';
+  if (desc.includes('语音') || desc.includes('跳舞') || desc.includes('舞蹈')) return 'voice';
+  if (desc.includes('建筑')) return 'build';
+  if (desc.includes('提示') || desc.includes('主持')) return 'host';
+  if (type === 'taskComplete' || type === 'itemFound' || type === 'puzzlePlaced' || type === 'quizAnswered' || type === 'voteCast') return 'tasks';
+  if (type === 'buildingPlaced' || type === 'buildingMoved' || type === 'buildingUndo') return 'build';
+  if (type === 'achievement') return 'replay';
+  if (type === 'teamWork') return 'tasks';
+  if (type === 'funnyMoment') return 'voice';
+  if (type === 'hostHint' || type === 'gamePause' || type === 'gameResume') return 'host';
+  return 'tasks';
+}
+
+function inferScoreDeltaFromDescription(desc: string, type: string): number | undefined {
+  if (desc.includes('完成') && desc.includes('拼图')) return 100;
+  if (desc.includes('找到') || desc.includes('宝藏')) return 80;
+  if (desc.includes('答对') && (desc.includes('连击') || desc.includes('连续'))) return 80;
+  if (desc.includes('答对')) return 50;
+  if (desc.includes('成就')) return 50;
+  if (desc.includes('团队之星') || desc.includes('累计')) return 50;
+  if (desc.includes('配合') || desc.includes('协作')) return 50;
+  if (desc.includes('跳舞') || desc.includes('舞蹈') || desc.includes('欢乐') || type === 'funnyMoment') return undefined;
+  if (type === 'taskStart' || type === 'gamePause' || type === 'gameResume' || type === 'hostHint') return undefined;
+  if (type === 'taskComplete') return 100;
+  if (type === 'itemFound') return 20;
+  if (type === 'puzzlePlaced') return 10;
+  if (type === 'quizAnswered') return 30;
+  if (type === 'voteCast') return 10;
+  if (type === 'buildingPlaced' || type === 'buildingMoved' || type === 'buildingUndo') return undefined;
+  if (type === 'teamWork') return 50;
+  if (type === 'achievement') return 50;
+  return undefined;
+}
+
 function normalizeEvent(event: EventLog | Highlight): NormalizedEvent {
-  if ('playerId' in event || 'playerIds' in event) {
+  const isHighlight = 'type' in event && ['taskComplete', 'achievement', 'teamWork', 'funnyMoment'].includes((event as Highlight).type) && !('playerId' in event) && !('taskId' in event) && !('buildingId' in event);
+  let base: NormalizedEvent;
+
+  if (!isHighlight) {
     const log = event as EventLog;
-    return {
+    base = {
       id: log.id,
       timestamp: log.timestamp,
       type: log.type,
@@ -85,17 +137,33 @@ function normalizeEvent(event: EventLog | Highlight): NormalizedEvent {
       taskId: log.taskId,
       buildingId: log.buildingId,
     };
+  } else {
+    const h = event as Highlight;
+    base = {
+      id: h.id,
+      timestamp: h.timestamp,
+      type: h.type,
+      description: h.description,
+      playerIds: h.playerIds,
+      scoreDelta: h.scoreDelta ?? h.points,
+      area: h.area,
+      teamScoreAfter: h.teamScoreAfter,
+    };
   }
-  const h = event as Highlight;
+
+  const presetKey = Object.keys(HIGHLIGHT_PRESETS).find(k => base.description.includes(k));
+  if (presetKey) {
+    const preset = HIGHLIGHT_PRESETS[presetKey];
+    base = { ...base, ...preset };
+  }
+
+  const inferredArea = inferAreaFromDescription(base.description, base.type);
+  const inferredScoreDelta = inferScoreDeltaFromDescription(base.description, base.type);
+
   return {
-    id: h.id,
-    timestamp: h.timestamp,
-    type: h.type,
-    description: h.description,
-    playerIds: h.playerIds,
-    scoreDelta: h.scoreDelta ?? h.points,
-    area: h.area,
-    teamScoreAfter: h.teamScoreAfter,
+    ...base,
+    area: base.area || inferredArea,
+    scoreDelta: base.scoreDelta !== undefined ? base.scoreDelta : inferredScoreDelta,
   };
 }
 

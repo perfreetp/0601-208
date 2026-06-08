@@ -70,8 +70,8 @@ interface GameStore extends GameState {
   addEventLog: (event: Omit<EventLog, 'id' | 'timestamp'>) => void;
   addMessage: (message: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
   addSystemMessage: (content: string) => void;
-  castVote: (topicId: string, optionId: string) => void;
-  answerQuiz: (questionIndex: number, answer: number) => { correct: boolean; points: number };
+  castVote: (topicId: string, optionId: string, playerId?: string) => void;
+  answerQuiz: (questionIndex: number, answer: number, playerId?: string) => { correct: boolean; points: number };
   goToNextQuiz: () => number;
   sendHint: (content: string) => void;
   findHiddenItem: (itemId: string, playerId: string) => void;
@@ -409,55 +409,51 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ],
     })),
 
-  castVote: (topicId, optionId) => {
-    const state = get();
-    const topic = state.voteTopics.find(t => t.id === topicId);
-    const option = topic?.options.find(o => o.id === optionId);
-    const currentScore = state.teamScore;
-    const points = 5;
-    const voteTask = state.tasks.find(t => t.type === 'vote' && t.status !== 'completed');
-
-    set((s) => ({
-      voteTopics: s.voteTopics.map((t) =>
-        t.id === topicId
-          ? {
-              ...t,
-              totalVotes: t.totalVotes + 1,
-              options: t.options.map((opt) =>
-                opt.id === optionId ? { ...opt, votes: opt.votes + 1 } : opt
-              ),
-            }
-          : t
-      ),
-      teamScore: s.teamScore + points,
-      tasks: s.tasks.map((t) =>
-        t.id === voteTask?.id
-          ? {
-              ...t,
-              participants: t.participants?.includes('p1') ? t.participants : [...(t.participants || []), 'p1'],
-              lastScoreRecord: {
-                playerId: 'p1',
-                points,
-                timestamp: new Date(),
-              },
-            }
-          : t
-      ),
-    }));
-
+  castVote: (topicId, optionId, playerId = 'p1') => {
+    set((state) => {
+      const topic = state.voteTopics.find(v => v.id === topicId);
+      if (!topic) return {};
+      if (topic.votedPlayerIds.includes(playerId)) {
+        console.log('该玩家已投过票');
+        return {};
+      }
+      const option = topic.options.find(o => o.id === optionId);
+      if (!option) return {};
+      const voteTask = state.tasks.find(t => t.type === 'vote');
+      const updatedTask = voteTask ? {
+        ...voteTask,
+        participants: [...(voteTask.participants || []), playerId].filter((v, i, a) => a.indexOf(v) === i),
+        lastScoreRecord: { playerId, points: 5, timestamp: new Date() },
+        remainingTarget: Math.max(0, (voteTask.remainingTarget ?? 6) - 1),
+        status: ((voteTask.remainingTarget ?? 6) - 1) <= 0 ? 'completed' as const : voteTask.status,
+      } : voteTask;
+      return {
+        voteTopics: state.voteTopics.map(t => t.id === topicId ? {
+          ...t,
+          votedPlayerIds: [...t.votedPlayerIds, playerId],
+          totalVotes: t.totalVotes + 1,
+          options: t.options.map(o => o.id === optionId ? { ...o, votes: o.votes + 1 } : o),
+        } : t),
+        teamScore: state.teamScore + 5,
+        tasks: state.tasks.map(t => t.id === updatedTask?.id ? updatedTask : t),
+        completedTasks: updatedTask?.status === 'completed' && !state.completedTasks.includes(updatedTask.id)
+          ? [...state.completedTasks, updatedTask.id] : state.completedTasks,
+      };
+    });
+    const currentScore = get().teamScore;
     get().addEventLog({
       type: 'voteCast',
-      description: `投票选择了「${option?.text || '某个选项'}」`,
-      playerId: 'p1',
-      playerIds: ['p1'],
+      description: `玩家对议题进行了投票`,
       area: 'tasks',
-      taskId: voteTask?.id,
-      scoreDelta: points,
-      teamScoreAfter: currentScore + points,
+      scoreDelta: 5,
+      teamScoreAfter: currentScore,
+      playerId,
+      playerIds: [playerId],
+      taskId: get().tasks.find(t=>t.type==='vote')?.id,
     });
   },
 
-  answerQuiz: (questionIndex, answer) => {
+  answerQuiz: (questionIndex, answer, playerId = 'p1') => {
     const state = get();
     const question = state.quizQuestions[questionIndex];
     if (!question) return { correct: false, points: 0 };
@@ -465,15 +461,40 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const correct = answer === question.correctAnswer;
     const points = correct ? question.points : 0;
     const currentScore = get().teamScore;
+    const quizTask = state.tasks.find(t => t.type === 'quiz');
+    const isLastQuestion = questionIndex >= state.quizQuestions.length - 1;
 
     if (correct) {
       get().addScore(question.points);
     }
 
+    set((s) => ({
+      tasks: s.tasks.map((t) => {
+        if (t.id === quizTask?.id) {
+          const remaining = isLastQuestion && correct ? 0 : Math.max(0, s.quizQuestions.length - (questionIndex + 1));
+          return {
+            ...t,
+            participants: t.participants?.includes(playerId) ? t.participants : [...(t.participants || []), playerId],
+            lastScoreRecord: {
+              playerId,
+              points,
+              timestamp: new Date(),
+            },
+            remainingTarget: remaining,
+          };
+        }
+        return t;
+      }),
+    }));
+
+    if (isLastQuestion && correct && quizTask) {
+      get().completeTask(quizTask.id);
+    }
+
     get().addEventLog({
       type: 'quizAnswered',
       description: correct ? `答对了题目「${question.question}」` : `答错了题目「${question.question}」`,
-      playerId: 'p1',
+      playerId,
       area: 'tasks',
       scoreDelta: points,
       teamScoreAfter: currentScore + points,

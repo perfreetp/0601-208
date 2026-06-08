@@ -503,26 +503,14 @@ export const MOCK_HIGHLIGHTS: Highlight[] = [
 export const MOCK_VOTE_TOPICS: VoteTopic[] = [
   {
     id: 'v1',
-    question: '今天的团建活动感觉如何？',
+    title: '下一个任务我们挑战什么？',
     options: [
-      { id: 'o1', text: '非常棒，下次还要参加！', votes: 4 },
-      { id: 'o2', text: '不错，有一些小建议', votes: 2 },
-      { id: 'o3', text: '一般般，还可以改进', votes: 0 },
-      { id: 'o4', text: '需要优化的地方很多', votes: 0 },
+      { id: 'o1', text: '星辰拼图（高难度）', votes: 2 },
+      { id: 'o2', text: '神秘宝藏（中等难度）', votes: 1 },
+      { id: 'o3', text: '知识风暴（简单）', votes: 1 },
     ],
-    isAnonymous: true,
-    totalVotes: 6,
-  },
-  {
-    id: 'v2',
-    question: '下个任务我们优先选择哪个？',
-    options: [
-      { id: 'o1', text: '知识风暴（问答）', votes: 3 },
-      { id: 'o2', text: '神秘宝藏（寻物）', votes: 2 },
-      { id: 'o3', text: '终极挑战（拼图）', votes: 1 },
-    ],
-    isAnonymous: false,
-    totalVotes: 6,
+    totalVotes: 4,
+    votedPlayerIds: ['p2', 'p3', 'p4', 'p5'],
   },
 ];
 

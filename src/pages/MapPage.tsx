@@ -41,7 +41,7 @@ const AREA_ROUTES: Record<GameArea, string> = {
 };
 
 export default function MapPage() {
-  const { tasks, completedTasks, teamScore, setCurrentArea, buildings } = useGameStore();
+  const { tasks, completedTasks, teamScore, setCurrentArea, buildings, teams } = useGameStore();
   const { players, currentPlayer } = usePlayerStore();
   const navigate = useNavigate();
   const [selectedArea, setSelectedArea] = useState<GameArea | null>(null);
@@ -345,45 +345,56 @@ export default function MapPage() {
               </h2>
 
               <div className="space-y-2">
-                {rankedPlayers.map((player, index) => (
-                  <div
-                    key={player.id}
-                    className={cn(
-                      'flex items-center gap-3 p-2.5 rounded-xl transition-all',
-                      player.id === currentPlayer.id
-                        ? 'bg-neon-cyan/15 border border-neon-cyan/30'
-                        : 'hover:bg-white/5'
-                    )}
-                  >
+                {rankedPlayers.map((player, index) => {
+                  const team = teams.find(t => t.id === player.teamId);
+                  const accentColor = team?.color || player.color;
+                  return (
                     <div
+                      key={player.id}
                       className={cn(
-                        'w-7 h-7 rounded-full flex items-center justify-center title-font text-sm flex-shrink-0',
-                        index === 0 && 'bg-gold-yellow/30 text-gold-yellow',
-                        index === 1 && 'bg-white/20 text-white/90',
-                        index === 2 && 'bg-coral-orange/30 text-coral-orange',
-                        index > 2 && 'bg-white/10 text-white/60'
+                        'flex items-center gap-3 p-2.5 rounded-xl transition-all',
+                        player.id === currentPlayer.id
+                          ? 'border'
+                          : 'hover:bg-white/5'
                       )}
+                      style={player.id === currentPlayer.id ? {
+                        backgroundColor: `${accentColor}15`,
+                        borderColor: `${accentColor}30`,
+                      } : undefined}
                     >
-                      {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : index + 1}
+                      <div
+                        className={cn(
+                          'w-7 h-7 rounded-full flex items-center justify-center title-font text-sm flex-shrink-0',
+                          index === 0 && 'bg-gold-yellow/30 text-gold-yellow',
+                          index === 1 && 'bg-white/20 text-white/90',
+                          index === 2 && 'bg-coral-orange/30 text-coral-orange',
+                          index > 2 && 'bg-white/10 text-white/60'
+                        )}
+                      >
+                        {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : index + 1}
+                      </div>
+                      <div
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0 border-2"
+                        style={{
+                          backgroundColor: player.color,
+                          borderColor: accentColor,
+                        }}
+                      >
+                        {player.avatarEmoji}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {player.name}
+                          {player.isHost && <span className="ml-1 text-xs">👑</span>}
+                        </p>
+                        <p className="text-xs" style={{ color: accentColor }}>
+                          {team?.name || '未组队'} · {getAreaIcon(player.currentArea)} {getAreaName(player.currentArea)}
+                        </p>
+                      </div>
+                      <p className="title-font text-lg text-glow flex-shrink-0">{player.score}</p>
                     </div>
-                    <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0"
-                      style={{ backgroundColor: player.color }}
-                    >
-                      {player.avatarEmoji}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {player.name}
-                        {player.isHost && <span className="ml-1 text-xs">👑</span>}
-                      </p>
-                      <p className="text-xs text-white/50">
-                        {getAreaIcon(player.currentArea)} {getAreaName(player.currentArea)}
-                      </p>
-                    </div>
-                    <p className="title-font text-lg text-glow flex-shrink-0">{player.score}</p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>

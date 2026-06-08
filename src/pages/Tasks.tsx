@@ -43,14 +43,20 @@ function PuzzleTab() {
   const hasCompleted = useRef(false);
 
   useEffect(() => {
-    if (placedCount === 9 && puzzleTask && puzzleTask.status !== 'completed' && !hasCompleted.current) {
+    if (isPuzzleCompleted && placedCount < 9 && !hasCompleted.current) {
       hasCompleted.current = true;
-      completeTask(puzzleTask.id);
+      puzzlePieces.forEach(piece => {
+        if (!piece.isPlaced) {
+          const gridX = Math.round(((piece.targetX - 16.66) / 33.33)) + 1;
+          const gridY = Math.floor((piece.targetY - 16.66) / 33.33) + 1;
+          useGameStore.getState().placePuzzlePiece(piece.id, gridX, gridY);
+        }
+      });
     }
-    if (puzzleTask?.status === 'completed' && placedCount < 9) {
-      hasCompleted.current = true;
+    if (placedCount >= 9 && puzzleTask && puzzleTask.status !== 'completed') {
+      useGameStore.getState().completeTask(puzzleTask.id);
     }
-  }, [placedCount, puzzleTask, completeTask]);
+  }, [isPuzzleCompleted, placedCount, puzzleTask, puzzlePieces]);
 
   const handleCellClick = (x: number, y: number) => {
     if (isPaused || selectedPieceId === null || isPuzzleCompleted) return;
@@ -93,7 +99,7 @@ function PuzzleTab() {
           <div className="text-6xl mb-4">🏆</div>
           <h3 className="title-font text-2xl text-white">恭喜！拼图挑战已完成</h3>
           <p className="text-aurora-green font-bold text-xl mt-2">团队获得 +100 分</p>
-          <p className="text-white/60 text-sm mt-1">{placedCount}/9 块已全部放置</p>
+          <p className="text-white/60 text-sm mt-1">9/9 块已全部放置</p>
         </div>
 
         <div className="glass-panel p-6">
@@ -102,17 +108,18 @@ function PuzzleTab() {
               const x = idx % 3;
               const y = Math.floor(idx / 3);
               const placedPiece = getPlacedPiece(x, y);
+              const showPlaced = isPuzzleCompleted || placedPiece;
               return (
                 <div
                   key={idx}
                   className={cn(
                     'aspect-square rounded-lg flex items-center justify-center text-4xl transition-all duration-300',
-                    placedPiece
+                    showPlaced
                       ? 'bg-gradient-to-br from-neon-cyan/30 to-starlight-purple/30 border-2 border-neon-cyan/50 shadow-lg shadow-neon-cyan/20'
                       : 'bg-white/5 border-2 border-dashed border-white/20'
                   )}
                 >
-                  {placedPiece ? (
+                  {showPlaced ? (
                     <span className="text-3xl">✨</span>
                   ) : (
                     <span className="text-white/30 text-2xl">?</span>
@@ -341,13 +348,7 @@ function VoteTab() {
           return (
             <div key={topic.id} className="glass-panel p-5">
               <div className="flex items-start justify-between mb-4">
-                <h4 className="text-white font-semibold text-lg">{topic.question}</h4>
-                <span className={cn(
-                  'text-xs px-2 py-1 rounded-full',
-                  topic.isAnonymous ? 'bg-starlight-purple/30 text-starlight-light' : 'bg-neon-cyan/20 text-neon-cyan'
-                )}>
-                  {topic.isAnonymous ? '匿名投票' : '实名投票'}
-                </span>
+                <h4 className="text-white font-semibold text-lg">{topic.title}</h4>
               </div>
 
               <div className="space-y-3">
@@ -587,7 +588,7 @@ function QuizTab() {
 }
 
 function TeamBoard() {
-  const { tasks, hiddenItems, puzzlePieces, teamScore, voteTopics, quizQuestions, currentQuizIndex } = useGameStore();
+  const { tasks, hiddenItems, puzzlePieces, teamScore, voteTopics, quizQuestions, currentQuizIndex, teams } = useGameStore();
   const { players } = usePlayerStore();
 
   const getTaskProgress = (task: typeof tasks[number]) => {
@@ -614,8 +615,12 @@ function TeamBoard() {
   };
 
   const getRemainingTarget = (task: typeof tasks[number]) => {
+    if (task.type === 'quiz' && task.status === 'completed') {
+      return '已完成';
+    }
     if (typeof task.remainingTarget === 'number') {
-      return `剩余 ${task.remainingTarget}`;
+      const unit = task.type === 'quiz' ? ' 题' : '';
+      return `剩余 ${task.remainingTarget}${unit}`;
     }
     const progress = getTaskProgress(task);
     const remaining = Math.max(0, progress.total - progress.current);
@@ -695,16 +700,23 @@ function TeamBoard() {
 
               <div className="flex items-center justify-between mb-2">
                 <div className="flex -space-x-1.5">
-                  {participants.slice(0, 3).map((player) => (
-                    <div
-                      key={player.id}
-                      className="w-6 h-6 rounded-full flex items-center justify-center text-xs border-2 border-deep-ocean"
-                      style={{ backgroundColor: player.color }}
-                      title={player.name}
-                    >
-                      {player.avatarEmoji}
-                    </div>
-                  ))}
+                  {participants.slice(0, 3).map((player) => {
+                    const team = teams.find(t => t.id === player.teamId);
+                    const borderColor = team?.color || player.color;
+                    return (
+                      <div
+                        key={player.id}
+                        className="w-6 h-6 rounded-full flex items-center justify-center text-xs border-2"
+                        style={{
+                          backgroundColor: player.color,
+                          borderColor,
+                        }}
+                        title={player.name}
+                      >
+                        {player.avatarEmoji}
+                      </div>
+                    );
+                  })}
                   {participants.length > 3 && (
                     <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs bg-white/20 text-white/70 border-2 border-deep-ocean">
                       +{participants.length - 3}

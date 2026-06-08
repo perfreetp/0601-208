@@ -141,11 +141,10 @@ export interface VoteOption {
 
 export interface VoteTopic {
   id: string;
-  question: string;
+  title: string;
   options: VoteOption[];
-  isAnonymous: boolean;
   totalVotes: number;
-  endTime?: Date;
+  votedPlayerIds: string[];
 }
 
 export interface QuizQuestion {
